@@ -1,0 +1,6 @@
+type: monash
+name: melbourne_pedestrian_counts
+file_name: pedestrian_counts_dataset.tsf
+external_forecast_horizon: 24
+integer_conversion: true
+metric: mean_MASE_forecasting

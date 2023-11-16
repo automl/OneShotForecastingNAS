@@ -1,0 +1,6 @@
+type: monash
+name: us_births
+file_name: us_births_dataset.tsf
+external_forecast_horizon: 30
+integer_conversion: true
+metric: mean_MASE_forecasting

@@ -1,0 +1,6 @@
+type: monash
+name: fred_md
+file_name: fred_md_dataset.tsf
+external_forecast_horizon: 12
+integer_conversion: false
+metric: mean_MASE_forecasting

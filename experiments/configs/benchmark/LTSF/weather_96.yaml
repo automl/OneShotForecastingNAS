@@ -1,0 +1,9 @@
+type: LTSF
+name: "weather_96"
+file_name: weather/weather.csv
+series_type: "M"
+freq: "10min"
+external_forecast_horizon: 96
+do_normalization: true
+metric: mean_MSE_forecasting
+make_dataset_uni_variant: false

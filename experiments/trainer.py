@@ -1,0 +1,314 @@
+import os
+from pathlib import Path
+from tqdm.contrib import tzip
+
+from autoPyTorch.pipeline.components.setup.forecasting_target_scaling.utils import TargetScaler
+from autoPyTorch.pipeline.components.setup.network.forecasting_architecture import get_lagged_subsequences
+
+from tsf_oneshot.networks.architect import Architect
+from tsf_oneshot.networks.network_controller import (
+    ForecastingDARTSNetworkController,
+    AbstractForecastingNetworkController
+)
+
+import wandb
+
+import torch
+from tsf_oneshot.training_utils import scale_value, rescale_output
+
+
+def pad_tensor(tensor_to_be_padded: torch.Tensor, target_length: int) -> torch.Tensor:
+    """
+    pad tensor to meet the required length
+
+    Args:
+         tensor_to_be_padded (torch.Tensor)
+            tensor to be padded
+         target_length  (int):
+            target length
+
+    Return:
+        torch.Tensor:
+            padded tensors
+    """
+    tensor_shape = tensor_to_be_padded.shape
+    padding_size = [tensor_shape[0], target_length - tensor_shape[1], tensor_shape[-1]]
+    tensor_to_be_padded = torch.cat([tensor_to_be_padded.new_zeros(padding_size), tensor_to_be_padded], dim=1)
+    return tensor_to_be_padded
+
+
+class ForecastingTrainer:
+    def __init__(self,
+                 model: AbstractForecastingNetworkController,
+                 w_optimizer: torch.optim.Optimizer,
+                 a_optimizer: torch.optim.Optimizer,
+                 lr_scheduler_w: torch.optim.lr_scheduler.LRScheduler | None,
+                 lr_scheduler_a: torch.optim.lr_scheduler.LRScheduler | None,
+                 train_loader: torch.utils.data.DataLoader,
+                 val_loader: torch.utils.data.DataLoader,
+                 window_size: int,
+                 n_prediction_steps: int,
+                 lagged_values: list[int],
+                 target_scaler: TargetScaler,
+                 grad_clip: float = 0,
+                 device: torch.device = torch.device('cuda'),
+                 amp_enable: bool = False
+                 ):
+        self.model = model.to(device)
+        self.w_optimizer = w_optimizer
+        self.a_optimizer = a_optimizer
+
+        self.train_loader = train_loader
+        self.val_loader = val_loader
+
+        self.target_scaler = target_scaler
+
+        self.device = device
+
+        self.lagged_values = lagged_values
+        self.window_size = window_size
+        self.n_prediction_steps = n_prediction_steps
+
+        self.cached_lag_mask_encoder = None
+        self.cached_lag_mask_decoder = None
+
+        self.lr_scheduler_w = lr_scheduler_w
+        self.lr_scheduler_a = lr_scheduler_a
+
+        self.grad_clip = grad_clip
+        self.amp_enable = amp_enable
+        self.scaler = torch.cuda.amp.GradScaler(enabled=amp_enable)
+
+    def preprocessing(self, X: dict):
+
+        past_targets = X['past_targets'].float()
+        past_features = X['past_features']
+        if past_features is not None:
+            past_features = past_features.float()
+        past_observed_targets = X['past_observed_targets']
+        future_features = X['future_features']
+        if future_features is not None:
+            future_features = future_features.float()
+
+        if self.window_size < past_targets.shape[1]:
+            past_targets = past_targets.to(self.device)
+            past_observed_targets = past_observed_targets.to(self.device)
+            past_targets[:, -self.window_size:], _, loc, scale = self.target_scaler.transform(
+                past_targets[:, -self.window_size:],
+                past_observed_targets[:, -self.window_size:]
+            )
+            past_targets[:, :-self.window_size] = torch.where(
+                past_observed_targets[:, :-self.window_size],
+                scale_value(past_targets[:, :-self.window_size], loc, scale, device=self.device),
+                past_targets[:, :-self.window_size])
+        else:
+            past_targets, _, loc, scale = self.target_scaler.transform(
+                past_targets.to(self.device),
+                past_observed_targets.to(self.device)
+            )
+        truncated_past_targets, self.cached_lag_mask_encoder = get_lagged_subsequences(past_targets,
+                                                                                       self.window_size,
+                                                                                       self.lagged_values,
+                                                                                       self.cached_lag_mask_encoder)
+
+        if past_features is not None:
+            if self.window_size <= past_features.shape[1]:
+                past_features = past_features[:, -self.window_size:]
+            elif self.lagged_values:
+                past_features = pad_tensor(past_features, self.window_size)
+
+        if past_features is not None:
+            past_features = past_features.to(device=self.device)
+            x_past = torch.cat([past_features, truncated_past_targets], dim=-1)
+        else:
+            x_past = truncated_past_targets
+        truncated_decoder_targets, self.cached_lag_mask_decoder = get_lagged_subsequences(past_targets,
+                                                                                          self.n_prediction_steps,
+                                                                                          self.lagged_values,
+                                                                                          self.cached_lag_mask_decoder)
+        if future_features is not None:
+            future_features = future_features.to(self.device)
+            x_future = torch.cat(
+                [future_features, truncated_decoder_targets], dim=-1
+            )
+        else:
+            x_future = truncated_decoder_targets
+
+        return x_past, x_future, (loc, scale)
+
+    def train_epoch(self, epoch: int):
+        if self.lr_scheduler_w is not None:
+            self.lr_scheduler_w.step()
+        if self.lr_scheduler_a is not None:
+            self.lr_scheduler_a.step()
+
+        for (train_X, train_y), (val_X, val_y) in tzip(self.train_loader, self.val_loader):
+            x_past_train, x_future_train, scale_value_train = self.preprocessing(train_X)
+            x_past_val, x_future_val, scale_value_val = self.preprocessing(val_X)
+
+            target_train = train_y['future_targets'].float().to(self.device)
+            target_val = val_y['future_targets'].float().to(self.device)
+
+            # update model weights
+            self.w_optimizer.zero_grad()
+            with torch.cuda.amp.autocast(enabled=self.amp_enable):
+                prediction_train, w_dag_train = self.model(x_past_train, x_future_train, return_w_head=True)
+
+                w_loss = self.model.get_training_loss(target_train,
+                                                      rescale_output(prediction_train, *scale_value_train, device=self.device),
+                                                      w_dag_train
+                                                      )
+            self.scaler.scale(w_loss).backward()
+            wandb.log({'weights training loss': w_loss})
+
+            if self.grad_clip > 0:
+                self.scaler.unscale_(self.w_optimizer)
+                gradient_norm = self.model.gard_norm_weights()
+                wandb.log({'gradient_norm_weights': gradient_norm})
+                torch.nn.utils.clip_grad_norm_(self.model.weights(), self.grad_clip)
+            else:
+                self.scaler.unscale_(self.w_optimizer)
+                gradient_norm = self.model.gard_norm_weights()
+                wandb.log({'gradient_norm_weights': gradient_norm})
+
+            self.scaler.step(self.w_optimizer)
+            self.scaler.update()
+
+            # update alpha values
+            self.a_optimizer.zero_grad()
+            with torch.cuda.amp.autocast(enabled=self.amp_enable):
+                prediction_val, w_dag_val = self.model(x_past_val, x_future_val, return_w_head=True)
+
+                a_loss = self.model.get_validation_loss(target_val,
+                                                        rescale_output(prediction_val, *scale_value_val,
+                                                                            device=self.device),
+                                                        w_dag_val)
+            self.scaler.scale(a_loss).backward()
+
+            wandb.log({'alphas training loss': a_loss})
+
+            if self.grad_clip > 0:
+                self.scaler.unscale_(self.a_optimizer)
+                gradient_norm = self.model.gard_norm_alphas()
+                wandb.log({'gradient_norm_alphas': gradient_norm})
+                torch.nn.utils.clip_grad_norm_(self.model.arch_parameters(), self.grad_clip)
+            else:
+                self.scaler.unscale_(self.a_optimizer)
+                gradient_norm = self.model.gard_norm_alphas()
+                wandb.log({'gradient_norm_alphas': gradient_norm})
+            self.scaler.step(self.a_optimizer)
+            self.scaler.update()
+
+    def save(self, save_path: Path, epoch: int):
+        if not save_path.exists():
+            os.makedirs(save_path)
+        self.model.save(save_path / 'Model')
+
+        save_dict = {
+            'w_optimizer': self.w_optimizer.state_dict(),
+            'a_optimizer': self.a_optimizer.state_dict(),
+            'epoch': epoch
+        }
+        if self.lr_scheduler_w is not None:
+            save_dict['lr_scheduler_w'] = self.lr_scheduler_w.state_dict()
+        if self.lr_scheduler_a is not None:
+            save_dict['lr_scheduler_a'] = self.lr_scheduler_a.state_dict()
+
+        torch.save(
+            save_dict,
+            save_dict / 'trainer_info.pth'
+        )
+
+    @staticmethod
+    def load(resume_path: Path, w_optimizer: torch.optim.Optimizer, a_optimizer: torch.optim.Optimizer,
+             lr_scheduler_w: torch.optim.lr_scheduler.LRScheduler | None,
+             lr_scheduler_a: torch.optim.lr_scheduler.LRScheduler | None
+             ):
+        trainer_info = torch.load(resume_path / 'trainer_info.pth')
+        w_optimizer.load_state_dict(trainer_info['w_optimizer'])
+        a_optimizer.load_state_dict(trainer_info['a_optimizer'])
+
+        if lr_scheduler_w is not None:
+            lr_scheduler_w.load_state_dict(trainer_info['lr_scheduler_w'])
+        if lr_scheduler_a is not None:
+            lr_scheduler_a.load_state_dict(trainer_info['lr_scheduler_a'])
+        return trainer_info.get('epoch', 0)
+
+
+class ForecastingDARTSSecondOrderTrainer(ForecastingTrainer):
+    def __init__(self,
+                 model: ForecastingDARTSNetworkController,
+                 architect: Architect,
+                 lr_init:float | None=None,
+                 **kwargs,
+                 ):
+        super(ForecastingDARTSSecondOrderTrainer, self).__init__(model=model, **kwargs)
+        self.architect = architect
+        if lr_init is None and kwargs['lr_scheduler_w'] is None:
+            # TODO check if amp works on this type of architect
+            raise ValueError("either lr_scheduler_w or lr_init must be given")
+        self.lr_init = lr_init
+
+    def train_epoch(self, epoch: int):
+        if self.lr_scheduler_w is not None:
+            self.lr_scheduler_w.step()
+            lr = self.lr_scheduler_w.get_lr()[0]
+        else:
+            lr = self.lr_init
+
+        if self.lr_scheduler_a is not None:
+            self.lr_scheduler_a.step()
+
+        for step, ((train_X, train_y), (val_X, val_y)) in enumerate(zip(self.train_loader, self.val_loader)):
+            x_past_train, x_future_train, scale_value_train = self.preprocessing(train_X)
+            x_past_val, x_future_val, scale_value_val = self.preprocessing(val_X)
+
+            train_y = train_y.float().to(self.device)
+            val_y = val_y.float().to(self.device)
+
+            self.a_optimizer.zero_grad()
+            with torch.cuda.amp.autocast(enabled=self.amp_enable):
+                self.architect.unrolled_backward(x_past_train, x_future_train, train_y, scale_value_train,
+                                                 x_past_val, x_future_val, val_y, scale_value_val,
+                                                 lr, self.w_optimizer,self.amp_enable, self.scaler,
+                                                 )
+
+            if self.grad_clip > 0:
+                self.scaler.unscale_(self.a_optimizer)
+                gradient_norm = self.model.gard_norm_alphas()
+                wandb.log({'gradient_norm_alphas': gradient_norm})
+                torch.nn.utils.clip_grad_norm_(self.model.arch_parameters(), self.grad_clip)
+            else:
+                self.scaler.unscale_(self.a_optimizer)
+                gradient_norm = self.model.gard_norm_alphas()
+                wandb.log({'gradient_norm_alphas': gradient_norm})
+
+            self.scaler.step(self.a_optimizer)
+            self.scaler.update()
+
+            # optimize the weights
+            # update model weights
+            self.w_optimizer.zero_grad()
+            with torch.cuda.amp.autocast(enabled=self.amp_enable):
+                prediction_train, w_dag_train = self.model(x_past_train, x_future_train, return_w_head=True)
+
+                w_loss = self.model.get_training_loss(train_y,
+                                                      rescale_output(prediction_train, *scale_value_train, device=self.device),
+                                                      w_dag_train
+                                                      )
+            self.scaler.scale(w_loss).backward()
+            wandb.log({'weights training loss': w_loss})
+
+            if self.grad_clip > 0:
+                self.scaler.unscale_(self.w_optimizer)
+                gradient_norm = self.model.gard_norm_weights()
+                wandb.log({'gradient_norm_weights': gradient_norm})
+                torch.nn.utils.clip_grad_norm_(self.model.weights(), self.grad_clip)
+            else:
+                self.scaler.unscale_(self.w_optimizer)
+                gradient_norm = self.model.gard_norm_weights()
+                wandb.log({'gradient_norm_weights': gradient_norm})
+
+            self.scaler.step(self.w_optimizer)
+            self.scaler.update()
+

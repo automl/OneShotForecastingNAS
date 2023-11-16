@@ -1,0 +1,9 @@
+type: LTSF
+name: "traffic_336"
+file_name: traffic/traffic.csv
+series_type: "M"
+freq: "1H"
+external_forecast_horizon: 336
+do_normalization: true
+metric: mean_MSE_forecasting
+make_dataset_uni_variant: true

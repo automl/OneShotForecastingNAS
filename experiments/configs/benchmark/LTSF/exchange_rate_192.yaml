@@ -1,0 +1,9 @@
+type: LTSF
+name: "exchangerate_192"
+file_name: exchange_rate/exchange_rate.csv
+series_type: "M"
+freq: "1D"
+external_forecast_horizon: 96
+do_normalization: true
+metric: mean_MSE_forecasting
+make_dataset_uni_variant: false

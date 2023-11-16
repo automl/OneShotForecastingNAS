@@ -1,0 +1,68 @@
+seed: 0
+
+benchmark:
+  dataset_root: "/phys/ssd2/TSF_DATA"
+  type: ???
+  name: ???
+  file_name: ???
+  series_type: ???
+  freq: ???
+  external_forecast_horizon: ???
+  do_normalization: ???
+  integer_conversion: ???
+  metric: mean_MASE_forecasting
+
+dataloader:
+  batch_size: 8
+  window_size_coefficient: 2
+
+
+model:
+  type: ???
+  grad_order: ???
+
+  d_model: ???
+  n_cells: ???
+  n_nodes: ???
+  n_cell_input_nodes: ???
+
+  PRIMITIVES: ['gru', 'lstm', 'transformer', 'tcn', 'skip_connection']
+  HEADS: ['quantile', 'mse', 'mae', 'studentT']
+
+val_share: 0.45
+
+model_dir: /phys/ssd2/APT_TS_exp
+
+train:
+  n_epochs: 150
+  grad_clip: 0.1
+  amp_enable: true
+  targe_scaler: 'mean_abs'
+
+w_optimizer_type: 'adamw'
+w_optimizer:
+  lr: 0.025
+  weight_decay: 3e-4
+  beta1: 0.5
+  beta2: 0.999
+
+a_optimizer_type: 'adamw'
+a_optimizer:
+  lr: 3e-4
+  weight_decay: 1e-3
+  beta1: 0.5
+  beta2: 0.999
+
+lr_scheduler_type: 'CosineAnnealingWarmRestarts'
+lr_scheduler:
+  T_0: ${train.n_epochs}
+  T_mult: 1
+  eta_min: 1e-3
+
+wandb:
+  name: ${model.type}_${model.grad_order}
+  group: ${benchmark.name}
+  project: OneShotForecasting
+  entity: ddeng
+  mode: online
+

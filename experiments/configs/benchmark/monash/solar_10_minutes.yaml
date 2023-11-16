@@ -1,0 +1,6 @@
+type: monash
+name: solar_10_minutes
+file_name: solar_10_minutes_dataset.tsf
+external_forecast_horizon: 1008
+integer_conversion: false
+metric: mean_MASE_forecasting

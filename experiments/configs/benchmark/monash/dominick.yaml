@@ -1,0 +1,6 @@
+type: monash
+name: dominick
+file_name: dominick_dataset.tsf
+external_forecast_horizon: 8
+integer_conversion: false
+metric: mean_MASE_forecasting

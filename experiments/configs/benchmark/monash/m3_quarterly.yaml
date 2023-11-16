@@ -1,0 +1,6 @@
+type: monash
+name: m3_quarterly
+file_name: m3_quarterly_dataset.tsf
+external_forecast_horizon: null
+integer_conversion: false
+metric: mean_MASE_forecasting

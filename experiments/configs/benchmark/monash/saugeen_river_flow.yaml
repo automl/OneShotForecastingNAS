@@ -1,0 +1,6 @@
+type: monash
+name: saugeen_river_flow
+file_name: saugeenday_dataset.tsf
+external_forecast_horizon: 30
+integer_conversion: false
+metric: mean_MASE_forecasting

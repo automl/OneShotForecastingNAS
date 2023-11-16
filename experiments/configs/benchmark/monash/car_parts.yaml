@@ -1,0 +1,6 @@
+type: monash
+name: car_parts
+file_name: car_parts_dataset_without_missing_values.tsf
+external_forecast_horizon: 12
+integer_conversion: true
+metric: mean_MASE_forecasting

@@ -1,0 +1,9 @@
+type: LTSF
+name: "electricity_96"
+file_name: electricity/electricity.csv
+series_type: "M"
+freq: "1H"
+external_forecast_horizon: 96
+do_normalization: true
+metric: mean_MSE_forecasting
+make_dataset_uni_variant: true

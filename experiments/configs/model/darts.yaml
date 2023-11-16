@@ -1,0 +1,11 @@
+type: darts
+name: dartsG1
+
+grad_order: 1
+
+d_model: 256
+n_cells: 3
+n_nodes: 5
+n_cell_input_nodes: 1
+
+use_second_order_grad: false

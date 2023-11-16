@@ -1,0 +1,9 @@
+type: LTSF
+name: "ettm1_720"
+file_name: ETT-small/ETTm1.csv
+series_type: "M"
+freq: "15min"
+external_forecast_horizon: 720
+do_normalization: true
+metric: mean_MSE_forecasting
+make_dataset_uni_variant: false
