@@ -13,8 +13,8 @@ benchmark:
   metric: mean_MASE_forecasting
 
 dataloader:
-  batch_size: 8
-  window_size_coefficient: 2
+  batch_size: 16
+  window_size_coefficient: 1.25
 
 
 model:
@@ -26,28 +26,31 @@ model:
   n_nodes: ???
   n_cell_input_nodes: ???
 
-  PRIMITIVES: ['gru', 'lstm', 'transformer', 'tcn', 'skip_connection']
+  PRIMITIVES_encoder: ['lstm','gru','transformer', 'tcn', 'skip_connection']
+  # PRIMITIVES_encoder: ['transformer']
+  PRIMITIVES_decoder: [ 'lstm', 'gru','transformer', 'tcn', 'skip_connection' ]
+  #  PRIMITIVES_decoder: ['lstm']
   HEADS: ['quantile', 'mse', 'mae', 'studentT']
 
-val_share: 0.45
+val_share: 0.5
 
-model_dir: /phys/ssd2/APT_TS_exp
+model_dir: /phys/ssd2/TSF_OneShot
 
 train:
   n_epochs: 150
   grad_clip: 0.1
   amp_enable: true
-  targe_scaler: 'mean_abs'
+  targe_scaler: 'standard'
 
-w_optimizer_type: 'adamw'
 w_optimizer:
-  lr: 0.025
-  weight_decay: 3e-4
-  beta1: 0.5
-  beta2: 0.999
+  type: 'sgd'
+  lr: 0.1
+  weight_decay: 5e-4
+  momentum: 0.9
 
-a_optimizer_type: 'adamw'
+a_optimizer_type: 'adam'
 a_optimizer:
+  type: 'adam'
   lr: 3e-4
   weight_decay: 1e-3
   beta1: 0.5
@@ -55,7 +58,7 @@ a_optimizer:
 
 lr_scheduler_type: 'CosineAnnealingWarmRestarts'
 lr_scheduler:
-  T_0: ${train.n_epochs}
+  T_0: 30
   T_mult: 1
   eta_min: 1e-3
 

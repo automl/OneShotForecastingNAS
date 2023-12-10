@@ -38,7 +38,7 @@ class MixedEncoderOp(nn.Module):
         outputs = []
         for weight, op in zip(weights, self._ops):
             if weight > alpha_prune_threshold:
-                outputs.append(weight * out for out in op(**model_input_kwargs))
+                outputs.append(list(weight * out for out in op(**model_input_kwargs)))
         return list(sum(out) for out in zip(*outputs))
 
     @property
@@ -46,10 +46,10 @@ class MixedEncoderOp(nn.Module):
         return self._ops_names
 
     def __iter__(self) -> Iterable[nn.Module]:
-        return iter([self._ops[self._idx_mapping[idx]] for idx in range(len(self._ops_idx))])
+        return iter([self._ops[idx] for idx in range(len(self._ops_idx))])
 
     def __getitem__(self, idx: Union[int, slice]) -> nn.Module:
-        return self._ops[self._idx_mapping[idx]]
+        return self._ops[idx]
 
     def __len__(self):
         if self._ops_idx is None:

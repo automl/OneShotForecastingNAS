@@ -12,7 +12,7 @@ PREDICTION_HEADS = {
     "quantile": QuantileHead,
     "mse": MSEOutput,
     "mae": MAEOutput,
-    # "normal": NormalOutput,
+    "normal": NormalOutput,
     "studentT": StudentTOutput,
 }
 

@@ -88,6 +88,7 @@ def get_ltsf_dataset(root_path,
         data = scaler.transform(df_data.values)
     else:
         data = df_data.values
+
     return df_raw, data, border1, border2
 
 
@@ -103,6 +104,7 @@ def get_train_dataset(root_path,
                       make_dataset_uni_variant: bool = False,
                       train_only=False) -> dict:
     assert flag == 'train'
+    make_dataset_uni_variant = False
     df_raw, data, border1, border2 = get_ltsf_dataset(root_path, file_name=file_name,
                      series_type=series_type, dataset_name=dataset_name,flag=flag,
                      target_name=target_name, do_normalization=do_normalization,

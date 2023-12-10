@@ -1,5 +1,9 @@
 import abc
 from typing import Tuple, Any
+
+from autoPyTorch.pipeline.components.setup.network_backbone.forecasting_backbone.components_util import (
+    PositionalEncoding
+)
 import torch
 from torch import nn
 from torch.nn.utils import weight_norm
@@ -45,18 +49,22 @@ class LSTMDecoderModule(ForecastingDecoderLayer):
     def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
                 hx1: torch.Tensor, hx2: torch.Tensor):
         output, _ = self.cell(x_future, (hx1, hx2))
-        return output
+        return self.norm(output)
 
 
 class TransformerDecoderModule(ForecastingDecoderLayer):
-    def __init__(self, d_model: int, nhead: int = 8):
+    def __init__(self, d_model: int, nhead: int = 8, activation='gelu',is_first_layer: bool = False):
         super(TransformerDecoderModule, self).__init__()
-        self.cell = nn.TransformerDecoderLayer(d_model, nhead=nhead, dim_feedforward=4 * d_model, batch_first=True)
-        self.hx_encoder_layer = nn.Linear(d_model, d_model)
+        self.cell = nn.TransformerDecoderLayer(d_model, nhead=nhead, dim_feedforward=4 * d_model, batch_first=True, activation=activation)
+        self.is_first_layer = is_first_layer
+        if self.is_first_layer:
+            self.ps_encoding = PositionalEncoding(d_model=d_model)
 
     def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
                 hx1: torch.Tensor, hx2: torch.Tensor):
         mask = nn.Transformer.generate_square_subsequent_mask(x_future.shape[1], device=x_future.device)
+        if self.is_first_layer:
+            x_future = self.ps_encoding(x_future)
         output = self.cell(x_future, memory=encoder_output_net, tgt_mask=mask)
 
         return output
@@ -82,8 +90,6 @@ class TCNDecoderModule(ForecastingDecoderLayer):
                                  self.conv2, self.chomp2, self.relu2, self.dropout2)
         self.relu = nn.ReLU()
         self.norm = nn.LayerNorm(d_model)
-
-
         self.receptive_field = 1 + 2 * (kernel_size - 1) * dilation
 
     def forward(self,  x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
@@ -103,19 +109,19 @@ class TCNDecoderModule(ForecastingDecoderLayer):
 class MLPDecoderModule(ForecastingDecoderLayer):
     def __init__(self,
                  d_model: int,
-                 forecast_horizon: int,
+                 forecasting_horizon: int,
                  d_bottleneck: int = 8,
                  n_liner_layers: int = 1,
                  d_model_linear: int = 1024,
                  ):
         super().__init__()
-        self.forecasting_horizon = forecast_horizon
+        self.forecasting_horizon = forecasting_horizon
         self.d_model = d_model
         self.d_bottleneck = d_bottleneck
 
         act_func = nn.ReLU
 
-        flatten_bottleneck_size = d_bottleneck * forecast_horizon
+        flatten_bottleneck_size = d_bottleneck * forecasting_horizon
         networks_future = []
         networks_future.extend(
             [nn.Linear(d_model, d_bottleneck), act_func()])  # reduce the network to bottleneck dimensions
@@ -126,7 +132,7 @@ class MLPDecoderModule(ForecastingDecoderLayer):
         self.networks_future = nn.Sequential(*networks_future)
 
         network_linear = []
-        d_start = d_model_linear + d_model_linear
+        d_start = d_model_linear + d_model
 
         for i in range(n_liner_layers):
             network_linear.extend([nn.Linear(d_start, d_model_linear), act_func(), nn.LayerNorm(d_model_linear)])
@@ -135,10 +141,11 @@ class MLPDecoderModule(ForecastingDecoderLayer):
         network_linear.extend(
             [nn.Linear(d_start, flatten_bottleneck_size), act_func(), nn.LayerNorm(flatten_bottleneck_size)])
         network_linear.extend(
-            [nn.Unflatten(-1), [forecast_horizon, d_bottleneck],
-             nn.Linear(d_bottleneck, d_model),
-             act_func(),
-             nn.LayerNorm(d_model)
+            [
+                nn.Unflatten(-1, [forecasting_horizon, d_bottleneck]),
+                nn.Linear(d_bottleneck, d_model),
+                act_func(),
+                nn.LayerNorm(d_model)
              ]
         )
         self.network_linear = nn.Sequential(*network_linear)
@@ -151,9 +158,7 @@ class MLPDecoderModule(ForecastingDecoderLayer):
         x_future = self.networks_future(x_future)
 
         x = torch.concat([encoder_output, x_future], dim=-1)
-        x = self.global_layers(x)
-        if self.local_layers is not None:
-            x = self.local_layers(x)
+        x = self.network_linear(x)
         x = self.norm(x)
         return x
 

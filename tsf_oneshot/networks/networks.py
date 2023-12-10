@@ -3,18 +3,20 @@ from torch import nn
 
 from tsf_oneshot.networks.components import SearchGDASEncoder, SearchGDASDecoder, SearchDARTSEncoder, SearchDARTSDecoder
 from tsf_oneshot.prediction_heads import MixedHead
-
+import wandb
 
 class ForecastingAbstractNetwork(nn.Module):
     def __init__(self,
                  d_input_past: int,
                  d_input_future: int,
+                 forecasting_horizon: int,
                  d_model: int,
                  d_output: int,
                  n_cells: int,
                  n_nodes: int,
                  n_cell_input_nodes: int,
-                 PRIMITIVES: list[str],
+                 PRIMITIVES_encoder: list[str],
+                 PRIMITIVES_decoder: list[str],
                  HEADS: list[str],
                  HEADS_kwargs: dict[str, dict],
                  ):
@@ -27,7 +29,8 @@ class ForecastingAbstractNetwork(nn.Module):
         self.n_cells = n_cells
         self.n_nodes = n_nodes
         self.n_cell_input_nodes = n_cell_input_nodes
-        self.PRIMITIVES = PRIMITIVES
+        self.PRIMITIVES_encoder = PRIMITIVES_encoder
+        self.PRIMITIVES_decoder = PRIMITIVES_decoder
         self.HEADS = HEADS
 
         encoder_kwargs = dict(d_input=d_input_past,
@@ -35,7 +38,8 @@ class ForecastingAbstractNetwork(nn.Module):
                               n_cells=n_cells,
                               n_nodes=n_nodes,
                               n_cell_input_nodes=n_cell_input_nodes,
-                              PRIMITIVES=PRIMITIVES,
+                              PRIMITIVES=PRIMITIVES_encoder,
+                              forecasting_horizon=forecasting_horizon,
                               )
 
         self.encoder: SearchDARTSEncoder = self.get_encoder(
@@ -47,7 +51,9 @@ class ForecastingAbstractNetwork(nn.Module):
                               n_cells=n_cells,
                               n_nodes=n_nodes,
                               n_cell_input_nodes=n_cell_input_nodes,
-                              PRIMITIVES=PRIMITIVES, )
+                              PRIMITIVES=PRIMITIVES_decoder,
+                              forecasting_horizon=forecasting_horizon
+                              )
 
         self.decoder: SearchDARTSDecoder = self.get_decoder(
             **decoder_kwargs
@@ -85,6 +91,7 @@ class ForecastingAbstractNetwork(nn.Module):
                                         net_encoder_output=cell_encoder_out)
         return self.get_head_out(cell_decoder_out, head_idx=None)
 
+
 class ForecastingDARTSNetwork(ForecastingAbstractNetwork):
     @staticmethod
     def get_encoder(**encoder_kwargs):
@@ -95,7 +102,7 @@ class ForecastingDARTSNetwork(ForecastingAbstractNetwork):
         return SearchDARTSDecoder(**decoder_kwargs)
 
 
-class ForecastingGDASNetwork(nn.Module):
+class ForecastingGDASNetwork(ForecastingAbstractNetwork):
     @staticmethod
     def get_encoder(**encoder_kwargs):
         return SearchGDASEncoder(**encoder_kwargs)

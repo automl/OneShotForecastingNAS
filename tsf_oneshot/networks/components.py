@@ -9,11 +9,29 @@ from torch import nn
 
 from tsf_oneshot.cells.cells import SearchDARTSEncoderCell, SearchGDASEncoderCell, SearchGDASDecoderCell, SearchDARTSDecoderCell
 from tsf_oneshot.cells.ops import PRIMITIVES_Encoder
+from tsf_oneshot.cells.encoders.components import _Chomp1d
+
+
+class EmbeddingLayer(nn.Module):
+    # https://github.com/cure-lab/LTSF-Linear/blob/main/layers/Embed.py
+    def __init__(self, c_in, d_model, kernel_size=3):
+        super(EmbeddingLayer, self).__init__()
+        padding = (kernel_size - 1)
+        self.tokenConv = nn.Conv1d(in_channels=c_in,
+                                   out_channels=d_model,
+                                   kernel_size=3, padding=padding,
+                                   bias=False
+                                   )
+        self.chomp1 = _Chomp1d(padding)
+
+    def forward(self, x_past: torch.Tensor):
+        return self.chomp1(self.tokenConv(x_past.permute(0, 2, 1))).transpose(1, 2)
 
 
 class AbstractSearchEncoder(nn.Module):
     def __init__(self,
                  d_input: int,
+                 forecasting_horizon: int,
                  d_model: int,
                  n_cells: int,
                  n_nodes: int = 4,
@@ -28,16 +46,20 @@ class AbstractSearchEncoder(nn.Module):
         self.ops = PRIMITIVES
         self.n_cell_input_nodes = n_cell_input_nodes
 
-        self.embedding_layer = nn.Linear(d_input, d_model, bias=True)
+        #self.embedding_layer = nn.Linear(d_input, d_model, bias=True)
+        self.embedding_layer = EmbeddingLayer(d_input, d_model)
 
         cells = []
         num_edges = None
         edge2index = None
-        for _ in range(n_cells):
+        for i in range(n_cells):
             cell = self.get_cell(n_nodes=n_nodes,
                                  n_input_nodes=n_cell_input_nodes,
+                                 forecasting_horizon=forecasting_horizon,
                                  d_model=d_model,
-                                 PRIMITIVES=PRIMITIVES)
+                                 PRIMITIVES=PRIMITIVES,
+                                 is_first_cell=(i==0)
+                                 )
             cells.append(cell)
             if num_edges is None:
                 num_edges = cell.num_edges
@@ -46,7 +68,7 @@ class AbstractSearchEncoder(nn.Module):
 
         self.num_edges = num_edges
 
-        self.arch_parameters = nn.Parameter(1e-3 * torch.randn(num_edges, len(PRIMITIVES)))
+        # self.arch_parameters = nn.Parameter(1e-3 * torch.randn(num_edges, len(PRIMITIVES)))
 
         self._device = torch.device('cpu')
 
@@ -62,7 +84,7 @@ class AbstractSearchEncoder(nn.Module):
     def device(self, device: torch.device) -> None:
         self.to(device)
         self._device = device
-        self.arch_parameters = self.arch_parameters.to(device)
+        # self.arch_parameters = self.arch_parameters.to(device)
 
     def save(self, base_path: Path):
         meta_info = {
@@ -93,17 +115,6 @@ class AbstractSearchEncoder(nn.Module):
 
 
 class SearchDARTSEncoder(AbstractSearchEncoder):
-    def __init__(self,
-                 d_input: int,
-                 d_model: int,
-                 n_cells: int,
-                 n_nodes: int = 4,
-                 n_cell_input_nodes: int = 1,
-                 PRIMITIVES=PRIMITIVES_Encoder.keys(),
-                 ):
-        super(SearchDARTSEncoder, self).__init__(d_input=d_input, d_model=d_model, n_cells=n_cells, n_nodes=n_nodes,
-                                                 n_cell_input_nodes=n_cell_input_nodes, PRIMITIVES=PRIMITIVES)
-
     @staticmethod
     def get_cell(**kwargs):
         return SearchDARTSEncoderCell(**kwargs)
@@ -125,10 +136,10 @@ class SearchDARTSEncoder(AbstractSearchEncoder):
         torch.save(self.state_dict(), base_path / f'model_weights.pth')
 
     def forward(self, past_features: torch.Tensor, w_dag: torch.Tensor, **kwargs):
-        past_features = self.embedding_layer(past_features)
-        states = [past_features] * self.n_cell_input_nodes
+        embedding = self.embedding_layer(past_features)
+        states = [embedding] * self.n_cell_input_nodes
         cell_out = None
-        # w_dag = self.apply_normalizer(self.arch_parameters)
+
         cell_intermediate_steps = []
         for cell in self.cells:
             cell_out = cell(s_previous=states, w_dag=w_dag, )
@@ -168,10 +179,11 @@ class SearchDARTSDecoder(SearchDARTSEncoder):
                 cells_encoder_output: list[torch.Tensor],
                 net_encoder_output: torch.Tensor,
                 ):
-        future_features = self.embedding_layer(future_features)
-        states = [future_features] * self.n_cell_input_nodes
+        embedding = self.embedding_layer(future_features)
+        states = [embedding] * self.n_cell_input_nodes
         cell_out = None
         # w_dag = self.apply_normalizer(self.arch_parameters)
+        # print(f'Decoder: {embedding.min()} and {embedding.max()}')
 
         for cell_encoder_output, cell in zip(cells_encoder_output, self.cells):
             cell_out = cell(s_previous=states, w_dag=w_dag,

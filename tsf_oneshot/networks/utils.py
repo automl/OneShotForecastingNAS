@@ -76,4 +76,4 @@ def gumble_sample(arch_parameters: torch.Tensor, tau: float):
             index = probs.max(-1, keepdim=True)[1]
             one_h = torch.zeros_like(logits).scatter_(-1, index, 1.0)
             hardwts = one_h - probs.detach() + probs
-            return hardwts, logits
+            return hardwts, index

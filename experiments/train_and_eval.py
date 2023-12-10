@@ -17,7 +17,7 @@ from tsf_oneshot.networks.network_controller import ForecastingGDASNetworkContro
 
 from trainer import ForecastingTrainer, ForecastingDARTSSecondOrderTrainer
 
-
+from torch.nn import TransformerDecoder
 def seed_everything(seed: int):
     random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
@@ -39,12 +39,14 @@ def main(cfg: omegaconf.DictConfig):
 
     cfg.wandb.project = f'{cfg.wandb.project}_{seed}'
 
-    wandb.init(**cfg.wandb)
-
     device = 'cuda'
 
     model_type = cfg.model.type
     model_name = cfg.model.name
+
+    wandb.init(**cfg.wandb,
+               tags=[f'seed_{seed}', model_name],
+               )
 
     out_path = Path(cfg.model_dir) / device / dataset_type / dataset_name / model_name / str(seed)
     if not out_path.exists():
@@ -70,14 +72,19 @@ def main(cfg: omegaconf.DictConfig):
         raise NotImplementedError
 
     dataset = get_forecasting_dataset(dataset_name=dataset_name, **data_info)
+    from gluonts.time_feature.lag import get_lags_for_frequency
+    dataset.lagged_value = [0] # + get_lags_for_frequency(dataset.freq, num_default_lags=1)
 
     val_share: float = cfg.val_share
-    splits_new = regenerate_splits(dataset, val_share=val_share)
+    if cfg.benchmark.get('base_window_size', None) is None:
+        base_window_size = int(np.ceil(dataset.base_window_size))
+    else:
+        base_window_size = cfg.benchmark.base_window_size
 
-    base_window_size = int(np.ceil(dataset.base_window_size))
+    window_size = int(base_window_size * cfg.dataloader.window_size_coefficient)
 
+    splits_new = regenerate_splits(dataset, val_share=val_share, start_idx=window_size + max(dataset.lagged_value))
 
-    window_size = base_window_size * cfg.dataloader.window_size_coefficient
     train_data_loader, val_data_loader = get_dataloader(
         dataset=dataset, splits=splits_new, batch_size=cfg.dataloader.batch_size,
         window_size=window_size,
@@ -86,19 +93,22 @@ def main(cfg: omegaconf.DictConfig):
 
     n_time_features = len(dataset.time_feature_transform)
     d_input_past = len(dataset.lagged_value) * num_targets + n_time_features
-    d_input_future = len(dataset.lagged_value) * num_targets + n_time_features
+    #d_input_future = len(dataset.lagged_value) * num_targets + n_time_features
+    d_input_future = n_time_features
     d_output = dataset.num_targets
 
     net_init_kwargs = {
         'd_input_past': d_input_past,
+        'forecasting_horizon': dataset.n_prediction_steps,
         'd_input_future': d_input_future,
-        'd_model': cfg.model.d_model,
+        'd_model': int(cfg.model.d_model),
         'd_output': d_output,
-        'n_cells': cfg.model.n_cells,
-        'n_nodes': cfg.model.n_nodes,
-        'n_cell_input_nodes': cfg.model.n_cell_input_nodes,
-        'PRIMITIVES': cfg.model.PRIMITIVES,
-        'HEADS': cfg.model.HEADS
+        'n_cells': int(cfg.model.n_cells),
+        'n_nodes': int(cfg.model.n_nodes),
+        'n_cell_input_nodes': int(cfg.model.n_cell_input_nodes),
+        'PRIMITIVES_encoder': list(cfg.model.PRIMITIVES_encoder),
+        'PRIMITIVES_decoder': list(cfg.model.PRIMITIVES_decoder),
+        'HEADS': list(cfg.model.HEADS)
     }
     grad_order = cfg.model.get('grad_order', 1)
     if model_type == 'darts':
@@ -113,18 +123,17 @@ def main(cfg: omegaconf.DictConfig):
     else:
         raise NotImplementedError
 
-    if cfg.w_optimizer_type == 'adamw':
-        w_optimizer = torch.optim.AdamW(
-            params=model.weights(),
-            lr=cfg.w_optimizer.lr,
-            betas=(cfg.w_optimizer.beta1, cfg.w_optimizer.beta2),
-            weight_decay=cfg.w_optimizer.weight_decay
-        )
-    else:
-        raise NotImplementedError
+    w_optimizer = model.get_weight_optimizer(cfg.w_optimizer)
 
-    if cfg.a_optimizer_type == 'adamw':
+    if cfg.a_optimizer.type == 'adamw':
         a_optimizer = torch.optim.AdamW(
+            params=model.arch_parameters(),
+            lr=cfg.a_optimizer.lr,
+            betas=(cfg.a_optimizer.beta1, cfg.a_optimizer.beta2),
+            weight_decay=cfg.a_optimizer.weight_decay
+        )
+    elif cfg.a_optimizer.type == 'adam':
+        a_optimizer = torch.optim.Adam(
             params=model.arch_parameters(),
             lr=cfg.a_optimizer.lr,
             betas=(cfg.a_optimizer.beta1, cfg.a_optimizer.beta2),
@@ -168,11 +177,27 @@ def main(cfg: omegaconf.DictConfig):
         trainer = ForecastingTrainer(
             **trainer_init_kwargs
         )
+    epoch_start = 0
+    if (out_path / 'Model').exists():
+        epoch_start = trainer.load(out_path, model=model, w_optimizer=w_optimizer,
+                                  a_optimizer=a_optimizer, lr_scheduler_w=lr_scheduler)
 
-    for epoch in range(cfg.train.n_epochs):
-        trainer.train_epoch(epoch)
-        model.save(out_path)
+    #out_neg = Path(cfg.model_dir) / device / dataset_type / dataset_name / model_name / f'{seed}_w_negative_loss'
+    #epoch_start = trainer.load(out_path, model=model, w_optimizer=w_optimizer,
+    #                               a_optimizer=a_optimizer, lr_scheduler_w=lr_scheduler)
 
+    for epoch in range(epoch_start, cfg.train.n_epochs):
+        w_loss = trainer.train_epoch(epoch)
+        if not torch.isnan(w_loss):
+            trainer.save(out_path, epoch=epoch)
+
+            if w_loss < 0:
+                out_neg = Path(cfg.model_dir) / device / dataset_type / dataset_name / model_name / f'{seed}_w_negative_loss'
+                if not out_neg.exists():
+                    os.makedirs(out_neg, exist_ok=True)
+                    trainer.save(out_neg, epoch=epoch)
+        else:
+            break
 
 if __name__ == '__main__':
     main()

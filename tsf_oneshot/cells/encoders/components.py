@@ -1,7 +1,11 @@
 from typing import Tuple, Any
+
 import torch
 from torch import nn
 from torch.nn.utils import weight_norm
+
+from autoPyTorch.pipeline.components.setup.network_backbone.forecasting_backbone.components_util import \
+    PositionalEncoding
 
 
 class GRUEncoderModule(nn.Module):
@@ -13,6 +17,7 @@ class GRUEncoderModule(nn.Module):
 
     def forward(self, x_past: torch.Tensor, hx: Tuple[torch.Tensor] | None = None):
         output, hx = self.cell(x_past, hx)
+
         return self.norm(output), hx, self.hx_encoder_layer(hx)
 
 
@@ -28,17 +33,23 @@ class LSTMEncoderModule(nn.Module):
 
 
 class TransformerEncoderModule(nn.Module):
-    def __init__(self, d_model: int, nhead: int = 8, is_casual_model: bool = False):
+    def __init__(self, d_model: int, nhead: int = 8, activation='gelu', is_casual_model: bool = False, is_first_layer: bool=False):
         super(TransformerEncoderModule, self).__init__()
-        self.cell = nn.TransformerEncoderLayer(d_model, nhead=nhead, dim_feedforward=4 * d_model, batch_first=True)
+        self.cell = nn.TransformerEncoderLayer(d_model, nhead=nhead, dim_feedforward=4 * d_model, batch_first=True,
+                                               activation=activation)
         self.is_casual_model: bool = is_casual_model
         self.hx_encoder_layer = nn.Linear(d_model, d_model)
+        self.is_first_layer = is_first_layer
+        if self.is_first_layer:
+            self.ps_encoding = PositionalEncoding(d_model=d_model)
 
     def forward(self, x_past: torch.Tensor, hx: Any | None = None):
         if self.is_casual_model:
             mask = nn.Transformer.generate_square_subsequent_mask(x_past.shape[0], device=x_past.device)
         else:
             mask = None
+        if self.is_first_layer:
+            x_past = self.ps_encoding(x_past)
         output = self.cell(x_past, src_mask=mask)
         # Hidden States
         hidden_states = output[:, [-1]].transpose(0, 1)
@@ -59,7 +70,7 @@ class _Chomp1d(nn.Module):
 
 
 class TCNEncoderModule(nn.Module):
-    def __init__(self, d_model: int, kernel_size: int = 7, stride: int = 1, dilation: int = 1, dropout: float = 0.1):
+    def __init__(self, d_model: int, kernel_size: int = 7, stride: int = 1, dilation: int = 1, dropout: float = 0.2):
         super(TCNEncoderModule, self).__init__()
         padding = (kernel_size - 1) * dilation
         self.conv1 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,

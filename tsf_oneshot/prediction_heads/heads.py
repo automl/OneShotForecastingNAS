@@ -161,7 +161,8 @@ class StudentTOutput(DistProjectionLayer):
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         scale = F.softplus(scale) + 1e-10
         df = 2.0 + F.softplus(df)
-        return df.squeeze(-1), loc.squeeze(-1), scale.squeeze(-1)
+        # return df.squeeze(-1), loc.squeeze(-1), scale.squeeze(-1)
+        return df, loc, scale
 
     @property
     def dist_cls(self) -> Type[Distribution]:
@@ -182,7 +183,8 @@ class BetaOutput(DistProjectionLayer):
         epsilon = 1e-10
         concentration1 = F.softplus(concentration1) + epsilon
         concentration0 = F.softplus(concentration0) + epsilon
-        return concentration1.squeeze(-1), concentration0.squeeze(-1)
+        # return concentration1.squeeze(-1), concentration0.squeeze(-1)
+        return concentration1, concentration0
 
     @property
     def dist_cls(self) -> Type[Distribution]:
@@ -205,7 +207,8 @@ class GammaOutput(DistProjectionLayer):
         epsilon = 1e-10
         concentration = F.softplus(concentration) + epsilon
         rate = F.softplus(rate) + epsilon
-        return concentration.squeeze(-1), rate.squeeze(-1)
+        # return concentration.squeeze(-1), rate.squeeze(-1)
+        return concentration, rate
 
     @property
     def dist_cls(self) -> Type[Distribution]:
@@ -219,7 +222,8 @@ class PoissonOutput(DistProjectionLayer):
 
     def domain_map(self, rate: torch.Tensor) -> tuple[torch.Tensor]:  # type: ignore[override]
         rate_pos = F.softplus(rate).clone()
-        return (rate_pos.squeeze(-1),)
+        #return (rate_pos.squeeze(-1),)
+        return (rate_pos, )
 
     @property
     def dist_cls(self) -> Type[Distribution]:

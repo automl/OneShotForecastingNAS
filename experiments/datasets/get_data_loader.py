@@ -17,7 +17,6 @@ def get_forecasting_dataset(n_prediction_steps,
                             y_train,
                             start_times,
                             dataset_name='forecasting_dataset'):
-
     # Create a validator object to make sure that the data provided by
     # the user matches the autopytorch requirements
     input_validator = TimeSeriesForecastingInputValidator(
@@ -46,24 +45,65 @@ def get_forecasting_dataset(n_prediction_steps,
     return dataset
 
 
-def regenerate_splits(dataset: TimeSeriesForecastingDataset, val_share: float):
+def regenerate_splits(dataset: TimeSeriesForecastingDataset, val_share: float, start_idx: int | None = None,
+                      n_folds: int = 5):
     # AutoPyTorch dataset does not allow overlap between different validation series (such that each time step will be
     # assigned the same weights). Therefore, here we reimplement train / validation splits
-    n_prediction_steps = dataset.n_prediction_steps
-    splits = [[() for _ in range(len(dataset.datasets))] for _ in range(2)]
-    idx_start = 0
-    for idx_seq, seq in enumerate(dataset.datasets):
-        cv = TimeSeriesSplit(n_splits=2,
-                             test_size=int(val_share * (len(seq) - n_prediction_steps)),
-                             gap=n_prediction_steps - 1)
-        indices = np.arange(len(seq)) + idx_start
-        train, val = list(cv.split(indices))[-1]
-        splits[0][idx_seq] = indices[train]
-        splits[1][idx_seq] = indices[val]
-        idx_start += dataset.sequence_lengths_train[idx_seq]
-    train_indices_dataset = np.hstack([sp for sp in splits[0]])
-    val_indices_dataset = np.hstack([sp for sp in splits[1]])
-    return (train_indices_dataset, val_indices_dataset)
+    strategy = 'holdout'
+
+    if strategy == 'holdout':
+        n_prediction_steps = dataset.n_prediction_steps
+        splits = [[() for _ in range(len(dataset.datasets))] for _ in range(2)]
+        idx_start = 0
+        for idx_seq, seq in enumerate(dataset.datasets):
+            if start_idx is not None:
+                assert start_idx < len(seq), f"start_idx should be smaller than the length of the sequence." \
+                                               f" however, they are {start_idx} and {len(seq)} respectively"
+                indices = np.arange(start_idx, len(seq)) + idx_start
+            else:
+                indices = np.arange(len(seq)) + idx_start
+
+            cv = TimeSeriesSplit(n_splits=2,
+                                 test_size=int(val_share * (len(indices)-n_prediction_steps)),
+                                 gap=n_prediction_steps - 1)
+
+            train, val = list(cv.split(indices))[-1]
+            splits[0][idx_seq] = indices[train]
+            splits[1][idx_seq] = indices[val]
+            idx_start += dataset.sequence_lengths_train[idx_seq]
+        train_indices_dataset = np.hstack([sp for sp in splits[0]])
+        val_indices_dataset = np.hstack([sp for sp in splits[1]])
+        return (train_indices_dataset, val_indices_dataset)
+    elif strategy == 'cv':
+
+        splits = [[() for _ in range(len(dataset.datasets))] for _ in range(2)]
+        idx_start = 0
+        n_prediction_steps = dataset.n_prediction_steps
+        for idx_seq, seq in enumerate(dataset.datasets):
+            if start_idx is not None:
+                assert start_idx < len(seq), f"start_idx should be smaller than the length of the sequence." \
+                                               f" however, they are {start_idx} and {len(seq)} respectively"
+                indices = np.arange(start_idx, len(seq)) + idx_start
+            else:
+                indices = np.arange(len(seq)) + idx_start
+
+            cv = TimeSeriesSplit(n_splits=2,
+                                 test_size=int(val_share * (len(indices) - n_prediction_steps)),
+                                 gap=n_prediction_steps - 1)
+            train, val = list(cv.split(indices))[-1]
+
+            n_each_split = (len(indices) - n_prediction_steps) / (2 * n_folds)
+
+            splits[0][idx_seq] = np.concatenate([indices[int(2 * i* n_each_split): int(2* i* n_each_split + n_each_split)]
+                                                 for i in range(n_folds)])
+            splits[1][idx_seq] = np.concatenate([indices[int((2 * i + 1) * n_each_split):
+                                                         int((2* i + 1) * n_each_split + n_each_split)] for i in range(n_folds)])
+
+        train_indices_dataset = np.hstack([sp for sp in splits[0]])
+        val_indices_dataset = np.hstack([sp for sp in splits[1]])
+        return (train_indices_dataset, val_indices_dataset)
+    else:
+        raise NotImplementedError
 
 
 def get_dataloader(dataset: TimeSeriesForecastingDataset,
@@ -71,7 +111,7 @@ def get_dataloader(dataset: TimeSeriesForecastingDataset,
                    batch_size: int,
                    window_size: int,
                    num_workers: int = 8,
-                   padding_value: float=0.0
+                   padding_value: float = 0.0
                    ):
     n_prediction_steps = dataset.n_prediction_steps
 
@@ -90,7 +130,7 @@ def get_dataloader(dataset: TimeSeriesForecastingDataset,
     train_data_loader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=batch_size,
-        shuffle=False,
+        shuffle=True,
         num_workers=num_workers,
         pin_memory=True,
         drop_last=True,
@@ -100,7 +140,7 @@ def get_dataloader(dataset: TimeSeriesForecastingDataset,
     val_data_loader = torch.utils.data.DataLoader(
         val_dataset,
         batch_size=batch_size,
-        shuffle=False,
+        shuffle=True,
         num_workers=num_workers,
         pin_memory=True,
         drop_last=True,
