@@ -25,6 +25,7 @@ class ForecastingAbstractNetwork(nn.Module):
                  OPS_kwargs: dict[str, dict],
                  HEADS: list[str],
                  HEADS_kwargs: dict[str, dict],
+                 forecast_only: bool = False
                  ):
         super(ForecastingAbstractNetwork, self).__init__()
         self.d_input_past = d_input_past
@@ -38,6 +39,7 @@ class ForecastingAbstractNetwork(nn.Module):
         self.PRIMITIVES_encoder = PRIMITIVES_encoder
         self.PRIMITIVES_decoder = PRIMITIVES_decoder
         self.HEADS = HEADS
+        self.forecast_only = forecast_only
 
         encoder_kwargs = dict(d_input=d_input_past,
                               d_model=d_model,
@@ -91,12 +93,16 @@ class ForecastingAbstractNetwork(nn.Module):
                 arch_p_heads: torch.Tensor):
         cell_encoder_out, cell_intermediate_steps = self.encoder(x_past, w_dag=arch_p_encoder)
 
-        cell_decoder_out = self.decoder(future_features=x_future,
+        cell_decoder_out = self.decoder(x=x_future,
                                         w_dag=arch_p_decoder,
                                         cells_encoder_output=cell_intermediate_steps,
                                         net_encoder_output=cell_encoder_out)
+        forecast = self.get_head_out(cell_decoder_out, head_idx=None)
 
-        return self.get_head_out(cell_decoder_out, head_idx=None)
+        if self.forecast_only:
+            return forecast
+        backcast = self.get_head_out(cell_encoder_out, head_idx=None)
+        return backcast, forecast
 
 
 class ForecastingDARTSNetwork(ForecastingAbstractNetwork):
@@ -118,21 +124,6 @@ class ForecastingGDASNetwork(ForecastingAbstractNetwork):
     def get_decoder(**decoder_kwargs):
         return SearchGDASDecoder(**decoder_kwargs)
 
-    def forward(self, x_past: torch.Tensor,
-                x_future: torch.Tensor,
-                arch_p_encoder: tuple[torch.Tensor, torch.Tensor],
-                arch_p_decoder: tuple[torch.Tensor, torch.Tensor],
-                arch_p_heads: tuple[torch.Tensor, torch.Tensor]):
-
-        cell_encoder_out, cell_intermediate_steps = self.encoder(x_past, w_dag=arch_p_encoder,)
-
-        cell_decoder_out = self.decoder(future_features=x_future,
-                                        w_dag=arch_p_decoder,
-                                        cells_encoder_output=cell_intermediate_steps,
-                                        net_encoder_output=cell_encoder_out)
-
-        return self.get_head_out(cell_decoder_out, head_idx=None)
-
 
 class ForecastingDARTSFlatNetwork(nn.Module):
     def __init__(self,
@@ -145,6 +136,7 @@ class ForecastingDARTSFlatNetwork(nn.Module):
                  OPS_kwargs: dict[str, dict],
                  HEADS: list[str],
                  HEADS_kwargs: dict[str, dict],
+                 forecast_only: bool = False
                  ):
         super(ForecastingDARTSFlatNetwork, self).__init__()
         self.window_size = window_size
@@ -157,6 +149,7 @@ class ForecastingDARTSFlatNetwork(nn.Module):
         self.OPS_kwargs = OPS_kwargs
         self.HEADS = HEADS
         self.HEADS_kwargs = HEADS_kwargs
+        self.forecast_only = forecast_only
 
         encoder_kwargs = dict(window_size=window_size,
                               forecasting_horizon=forecasting_horizon,
@@ -165,6 +158,7 @@ class ForecastingDARTSFlatNetwork(nn.Module):
                               n_cell_input_nodes=n_cell_input_nodes,
                               PRIMITIVES=PRIMITIVES_encoder,
                               OPS_kwargs=OPS_kwargs,
+                              forecast_only=forecast_only
                               )
 
         self.encoder = self.get_encoder(**encoder_kwargs)
@@ -181,9 +175,15 @@ class ForecastingDARTSFlatNetwork(nn.Module):
                 x_future: torch.Tensor,
                 arch_p_encoder: torch.Tensor,
                 arch_p_heads: tuple[torch.Tensor, torch.Tensor]
-                ) -> torch.Tensor:
+                ) -> tuple[torch.Tensor, torch.Tensor]:
         cell_decoder_out = self.encoder(x_past, w_dag=arch_p_encoder)
-        return self.get_head_out(cell_decoder_out, head_idx=None)
+
+        backcast, forecast = torch.split(cell_decoder_out, [self.window_size, self.forecasting_horizon], dim=1)
+        backcast = self.get_head_out(backcast, head_idx=None)
+        forecast = self.get_head_out(forecast, head_idx=None)
+        if self.forecast_only:
+            return forecast
+        return backcast, forecast
 
     def get_head_out(self, cell_decoder_out: torch.Tensor, head_idx: int | None = None):
         if head_idx is None:

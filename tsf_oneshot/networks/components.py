@@ -55,7 +55,7 @@ class AbstractSearchEncoder(nn.Module):
         self.OPS_kwargs = OPS_kwargs
         self.n_cell_input_nodes = n_cell_input_nodes
 
-        #self.embedding_layer = nn.Linear(d_input, d_model, bias=True)
+        # self.embedding_layer = nn.Linear(d_input, d_model, bias=True)
         self.embedding_layer = EmbeddingLayer(d_input, d_model)
 
         cells = []
@@ -66,7 +66,7 @@ class AbstractSearchEncoder(nn.Module):
                                  n_input_nodes=n_cell_input_nodes,
                                  d_model=d_model,
                                  PRIMITIVES=PRIMITIVES,
-                                 is_first_cell=(i==0),
+                                 is_first_cell=(i == 0),
                                  OPS_kwargs=OPS_kwargs,
                                  )
             cells.append(cell)
@@ -121,7 +121,12 @@ class AbstractSearchEncoder(nn.Module):
             model.load_state_dict(torch.load(base_path / f'model_weights.pth', map_location=device))
         return model
 
-    def forward(self, past_features: torch.Tensor, w_dag, **kwargs):
+    def forward(self, x: torch.Tensor, **kwargs):
+        embedding = self.embedding_layer(x)
+        states = [embedding] * self.n_cell_input_nodes
+        return self.cells_forward(states, **kwargs)
+
+    def cells_forward(self, **kwargs):
         raise NotImplementedError
 
 
@@ -146,11 +151,8 @@ class SearchDARTSEncoder(AbstractSearchEncoder):
             json.dump(meta_info, f)
         torch.save(self.state_dict(), base_path / f'model_weights.pth')
 
-    def forward(self, past_features: torch.Tensor, w_dag: torch.Tensor, **kwargs):
-        embedding = self.embedding_layer(past_features)
-        states = [embedding] * self.n_cell_input_nodes
+    def cells_forward(self, states: list[torch.Tensor], w_dag: torch.Tensor, **kwargs):
         cell_out = None
-
         cell_intermediate_steps = []
         for cell in self.cells:
             cell_out = cell(s_previous=states, w_dag=w_dag, )
@@ -164,18 +166,14 @@ class SearchGDASEncoder(AbstractSearchEncoder):
     def get_cell(**kwargs):
         return SearchGDASEncoderCell(**kwargs)
 
-    def forward(self, past_features: torch.Tensor, w_dag: tuple[torch.Tensor, torch.Tensor], **kwargs):
+    def cells_forward(self, states: list[torch.Tensor], w_dag: torch.Tensor, **kwargs):
         hardwts, index = w_dag
-        past_features = self.embedding_layer(past_features)
-        states = [past_features] * self.n_cell_input_nodes
         cell_out = None
         cell_intermediate_steps = []
-
         for cell in self.cells:
             cell_out = cell.forward_gdas(s_previous=states, w_dag=hardwts, index=index)
             states = [*states[1:], cell_out]
             cell_intermediate_steps.append(cell.intermediate_outputs)
-
         return cell_out, cell_intermediate_steps
 
 
@@ -184,18 +182,10 @@ class SearchDARTSDecoder(SearchDARTSEncoder):
     def get_cell(**kwargs):
         return SearchDARTSDecoderCell(**kwargs)
 
-    def forward(self,
-                future_features: torch.Tensor,
-                w_dag: torch.Tensor,
-                cells_encoder_output: list[torch.Tensor],
-                net_encoder_output: torch.Tensor,
-                ):
-        embedding = self.embedding_layer(future_features)
-        states = [embedding] * self.n_cell_input_nodes
+    def cells_forward(self, states: list[torch.Tensor], w_dag: torch.Tensor,
+                      cells_encoder_output: list[torch.Tensor],
+                      net_encoder_output: torch.Tensor, **kwargs):
         cell_out = None
-        # w_dag = self.apply_normalizer(self.arch_parameters)
-        # print(f'Decoder: {embedding.min()} and {embedding.max()}')
-
         for cell_encoder_output, cell in zip(cells_encoder_output, self.cells):
             cell_out = cell(s_previous=states, w_dag=w_dag,
                             cell_encoder_output=cell_encoder_output, net_encoder_output=net_encoder_output)
@@ -208,21 +198,15 @@ class SearchGDASDecoder(SearchDARTSDecoder):
     def get_cell(**kwargs):
         return SearchGDASDecoderCell(**kwargs)
 
-    def forward(self,
-                future_features: torch.Tensor,
-                w_dag: tuple[torch.Tensor, torch.Tensor],
-                cells_encoder_output: list[torch.Tensor],
-                net_encoder_output: torch.Tensor,
-                ):
+    def cells_forward(self, states: list[torch.Tensor], w_dag: torch.Tensor,
+                      cells_encoder_output: list[torch.Tensor],
+                      net_encoder_output: torch.Tensor, **kwargs):
         hardwts, index = w_dag
-        future_features = self.embedding_layer(future_features)
-        states = [future_features] * self.n_cell_input_nodes
         cell_out = None
         for cell_encoder_output, cell in zip(cells_encoder_output, self.cells):
             cell_out = cell.forward_gdas(s_previous=states, w_dag=hardwts, index=index,
                                          cell_encoder_output=cell_encoder_output, net_encoder_output=net_encoder_output)
             states = [*states[1:], cell_out]
-
         return cell_out
 
 
@@ -254,7 +238,7 @@ class AbstractFlatEncoder(AbstractSearchEncoder):
                                  n_nodes=n_nodes,
                                  forecasting_horizon=forecasting_horizon,
                                  PRIMITIVES=PRIMITIVES,
-                                 is_last_cell=(i==n_cells -1),
+                                 is_last_cell=(i == n_cells - 1),
                                  OPS_kwargs=OPS_kwargs,
                                  )
             cells.append(cell)
@@ -292,34 +276,35 @@ class AbstractFlatEncoder(AbstractSearchEncoder):
             model.load_state_dict(torch.load(base_path / f'model_weights.pth', map_location=device))
         return model
 
-    def forward(self, past_targets: torch.Tensor, **kwargs):
-        raise NotImplementedError
-
 
 class SearchDARTSFlatEncoder(AbstractFlatEncoder):
     @staticmethod
     def get_cell(**kwargs):
         return SearchDARTSFlatEncoderCell(**kwargs)
 
-    def forward(self, past_targets: torch.Tensor, w_dag: torch.Tensor, **kwargs):
+    def forward(self, x: torch.Tensor, w_dag: torch.Tensor, **kwargs):
         # we always transform the input multiple_series map into independent single series input
-        batch_size = past_targets.shape[0]
+        batch_size = x.shape[0]
         # This result in a feature map of size [B*N, L, 1]
-        past_targets = torch.transpose(past_targets, -1, -2).flatten(0, 1)
+        past_targets = torch.transpose(x, -1, -2).flatten(0, 1)
         future_targets = torch.zeros([past_targets.shape[0], self.forecasting_horizon], device=past_targets.device,
                                      dtype=past_targets.dtype)
         embedding = torch.cat(
             [past_targets, future_targets], dim=1
         )
         states = [embedding]
+
+        cell_out = self.cells_forward(states, w_dag)
+
+        cell_out = cell_out.unflatten(0, (batch_size, -1)).transpose(-1, -2)
+        return cell_out
+
+    def cells_forward(self, states: list[torch], w_dag: torch.Tensor, **kwargs):
+        cell_out = None
         for cell in self.cells:
             cell_out = cell(s_previous=states, w_dag=w_dag, )
             states = [*states[1:], cell_out]
-
-        cell_out = cell_out.unflatten(0, (batch_size, -1)).transpose(-1, -2)
-        back_cast, fore_cast = torch.split(cell_out, [self.window_size, self.forecasting_horizon], dim=1)
-        # TODO check if back_cast is required !
-        return fore_cast
+        return cell_out
 
 
 class SearchGDASFlatEncoder(SearchDARTSFlatEncoder):
@@ -327,23 +312,11 @@ class SearchGDASFlatEncoder(SearchDARTSFlatEncoder):
     def get_cell(**kwargs):
         return SearchGDASFlatEncoderCell(**kwargs)
 
-    def forward(self, past_targets: torch.Tensor, w_dag: torch.Tensor, **kwargs):
-        # we always transform the input multiple_series map into independent single series input
-        batch_size = past_targets.shape[0]
-        # This result in a feature map of size [B*N, L, 1]
-        past_targets = torch.transpose(past_targets, -1, -2).flatten(0, 1)
-        future_targets = torch.zeros([past_targets.shape[0], self.forecasting_horizon], device=past_targets.device,
-                                     dtype=past_targets.dtype)
-        embedding = torch.cat(
-            [past_targets, future_targets], dim=1
-        )
-        states = [embedding]
-
+    def cells_forward(self, states: list[torch], w_dag: torch.Tensor, **kwargs):
+        cell_out = None
         hardwts, index = w_dag
         for cell in self.cells:
             cell_out = cell.forward_gdas(s_previous=states, w_dag=hardwts, index=index, )
             states = [*states[1:], cell_out]
+        return cell_out
 
-        cell_out = cell_out.unflatten(0, (batch_size, -1)).transpose(-1, -2)
-        back_cast, fore_cast = torch.split(cell_out, [self.window_size, self.forecasting_horizon], dim=1)
-        return fore_cast

@@ -114,6 +114,7 @@ def main(cfg: omegaconf.DictConfig):
         'n_cells': int(cfg.model.n_cells),
         'n_nodes': int(cfg.model.n_nodes),
         'n_cell_input_nodes': int(cfg.model.n_cell_input_nodes),
+        'backcast_loss_ration': float(cfg.model.get('backcast_loss_ration', 0.0))
     }
     if model_type == 'seq':
         net_init_kwargs.update(

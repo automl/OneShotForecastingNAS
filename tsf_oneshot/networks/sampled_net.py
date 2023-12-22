@@ -5,13 +5,13 @@ from typing import Type
 
 import torch
 from torch import nn
-from tsf_oneshot.networks.components import EmbeddingLayer
+from tsf_oneshot.networks.components import EmbeddingLayer, AbstractSearchEncoder
 from tsf_oneshot.cells.cells import SampledEncoderCell, SampledDecoderCell, SampledFlatEncoderCell
 from tsf_oneshot.cells.ops import PRIMITIVES_Encoder
 from tsf_oneshot.prediction_heads import PREDICTION_HEADS, FLATPREDICTION_HEADS
 
 
-class SampledEncoder(nn.Module):
+class SampledEncoder(AbstractSearchEncoder):
     def __init__(self,
                  d_input: int,
                  d_model: int,
@@ -21,9 +21,9 @@ class SampledEncoder(nn.Module):
                  n_nodes: int = 4,
                  n_cell_input_nodes: int = 1,
                  PRIMITIVES=PRIMITIVES_Encoder.keys(),
-                 OPS_kwargs: dict[str, dict] = {}
+                 OPS_kwargs: dict[str, dict] = {},
                  ):
-        super(SampledEncoder, self).__init__()
+        nn.Module.__init__(self)
         self.d_input = d_input
         self.d_model = d_model
         self.n_cells = n_cells
@@ -63,16 +63,6 @@ class SampledEncoder(nn.Module):
 
         self._device = torch.device('cpu')
 
-    @property
-    def device(self) -> torch.device:
-        return self._device
-
-    @device.setter
-    def device(self, device: torch.device) -> None:
-        self.to(device)
-        self._device = device
-        # self.arch_parameters = self.arch_parameters.to(device)
-
     def get_cell(self, **kwargs):
         return SampledEncoderCell(**kwargs)
 
@@ -85,7 +75,7 @@ class SampledEncoder(nn.Module):
             'n_cells': self.n_cells,
             'n_cell_input_nodes': self.n_cell_input_nodes,
             'PRIMITIVES': self.ops,
-            'OPS_kwargs': self.OPS_kwargs
+            'OPS_kwargs': self.OPS_kwargs,
         }
 
         if not base_path.exists():
@@ -95,20 +85,8 @@ class SampledEncoder(nn.Module):
             json.dump(meta_info, f)
         torch.save(self.state_dict(), base_path / f'model_weights.pth')
 
-    @staticmethod
-    def load(base_path: Path, device=torch.device('cpu')):
-        with open(base_path / f'meta_info.json', 'r') as f:
-            meta_info = json.load(f)
-        model = SampledNet(**meta_info)
-        if (base_path / f'model_weights.pth').exists():
-            model.load_state_dict(torch.load(base_path / f'model_weights.pth', map_location=device))
-        return model
-
-    def forward(self, past_features: torch.Tensor, **kwargs):
-        embedding = self.embedding_layer(past_features)
-        states = [embedding] * self.n_cell_input_nodes
+    def cells_forward(self, states: list[torch.Tensor], **kwargs):
         cell_out = None
-
         cell_intermediate_steps = []
         for cell in self.cells:
             cell_out = cell(s_previous=states, )
@@ -121,22 +99,15 @@ class SampledDecoder(SampledEncoder):
     def get_cell(self, **kwargs):
         return SampledDecoderCell(**kwargs)
 
-    def forward(self,
-                future_features: torch.Tensor,
-                cells_encoder_output: list[torch.Tensor],
-                net_encoder_output: torch.Tensor,
-                ):
-        embedding = self.embedding_layer(future_features)
-        states = [embedding] * self.n_cell_input_nodes
+    def cells_forward(self, states: list[torch.Tensor],
+                      cells_encoder_output: list[torch.Tensor], net_encoder_output: torch.Tensor, **kwargs):
         cell_out = None
-        # w_dag = self.apply_normalizer(self.arch_parameters)
-        # print(f'Decoder: {embedding.min()} and {embedding.max()}')
-
+        cell_intermediate_steps = []
         for cell_encoder_output, cell in zip(cells_encoder_output, self.cells):
             cell_out = cell(s_previous=states,
                             cell_encoder_output=cell_encoder_output, net_encoder_output=net_encoder_output)
             states = [*states[1:], cell_out]
-        return cell_out
+        return cell_out, cell_intermediate_steps
 
 
 class SampledNet(nn.Module):
@@ -157,6 +128,7 @@ class SampledNet(nn.Module):
                  OPS_kwargs: dict[str, dict],
                  HEAD: str,
                  HEADS_kwargs: dict[str, dict],
+                 forecast_only: bool = False
                  ):
         super(SampledNet, self).__init__()
         self.meta_info = dict(
@@ -171,6 +143,7 @@ class SampledNet(nn.Module):
             PRIMITIVES_encoder=PRIMITIVES_encoder,
             PRIMITIVES_decoder=PRIMITIVES_decoder,
             HEAD=HEAD, HEADS_kwargs=HEADS_kwargs,
+            forecast_only=forecast_only,
         )
         self.d_input_past = d_input_past
         self.d_input_future = d_input_future
@@ -191,6 +164,7 @@ class SampledNet(nn.Module):
         self.HEAD = HEAD
         self.HEADS_kwargs = HEADS_kwargs
 
+        self.forecast_only = forecast_only
         self.only_require_targets = False
 
         encoder_kwargs = dict(d_input=d_input_past,
@@ -232,9 +206,13 @@ class SampledNet(nn.Module):
         cell_decoder_out = self.decoder(future_features=x_future,
                                         cells_encoder_output=cell_intermediate_steps,
                                         net_encoder_output=cell_encoder_out)
+        forecast = self.head(cell_decoder_out)
+        if self.forecast_only:
+            return forecast
 
+        backcast = self.head(cell_encoder_out)
 
-        return self.head(cell_decoder_out)
+        return backcast, forecast
 
     def get_inference_prediction(self, prediction):
         return self.head.get_inference_pred(prediction)
@@ -338,6 +316,7 @@ class SampledFlatNet(SampledNet):
                  OPS_kwargs: dict[str, dict],
                  HEAD: str,
                  HEADS_kwargs: dict[str, dict],
+                 forecast_only: bool=False
                  ):
         nn.Module.__init__(self)
         self.meta_info = dict(
@@ -347,6 +326,7 @@ class SampledFlatNet(SampledNet):
             operations_encoder=operations_encoder, has_edges_encoder=has_edges_encoder,
             PRIMITIVES_encoder=PRIMITIVES_encoder,
             HEAD=HEAD, HEADS_kwargs=HEADS_kwargs,
+            forecast_only=forecast_only
         )
         self.forecasting_horizon = forecasting_horizon
         self.window_size = window_size
@@ -358,7 +338,7 @@ class SampledFlatNet(SampledNet):
         self.PRIMITIVES_encoder = PRIMITIVES_encoder
         self.operations_encoder = operations_encoder
         self.has_edges_encoder = has_edges_encoder
-
+        self.forecast_only = forecast_only
         self.only_require_targets = True
 
         cells = []
@@ -409,6 +389,8 @@ class SampledFlatNet(SampledNet):
         cell_out = cell_out.unflatten(0, (batch_size, -1)).transpose(-1, -2)
         back_cast, fore_cast = torch.split(cell_out, [self.window_size, self.forecasting_horizon], dim=1)
         # TODO check if back_cast is required !
+        if self.forecast_only:
+            return fore_cast
         return back_cast, fore_cast
 
     @staticmethod

@@ -127,8 +127,10 @@ class ForecastingTrainer:
         self.amp_enable = amp_enable
         self.scaler = torch.cuda.amp.GradScaler(enabled=amp_enable)
 
-    def preprocessing(self, X: dict):
+        self.backcast_loss_ration = model.backcast_loss_ration
+        self.forecast_only = model.forecast_only
 
+    def preprocessing(self, X: dict):
         past_targets = X['past_targets'].float()
         past_features = X['past_features']
         if past_features is not None:
@@ -234,9 +236,21 @@ class ForecastingTrainer:
         with torch.cuda.amp.autocast(enabled=self.amp_enable):
             prediction_train, w_dag_train = self.model(x_past_train, x_future_train, return_w_head=True)
             prediction = rescale_output(prediction_train, *scale_value_train, device=self.device)
-            loss_all = self.model.get_individual_training_loss(
-                target_train, prediction,
-            )
+            if self.forecast_only:
+                loss_all = self.model.get_individual_training_loss(
+                    target_train, prediction,
+                )
+            else:
+                backcast, forecast = prediction
+                target_train_backcast = train_X['past_targets'].float()[:, -self.window_size:, :].to(self.device)
+                loss_backcast = self.model.get_individual_training_loss(
+                    target_train_backcast, backcast
+                )
+                loss_forecast = self.model.get_individual_training_loss(
+                    target_train, forecast,
+                )
+                loss_all = [l_b * self.backcast_loss_ration + l_f for l_b, l_f in zip(loss_backcast, loss_forecast)]
+
             if isinstance(self.model, ForecastingDARTSNetworkController):
                 w_loss = sum([w * loss for w, loss in zip(w_dag_train[0], loss_all)])
             elif isinstance(self.model, ForecastingGDASNetworkController):
@@ -252,8 +266,13 @@ class ForecastingTrainer:
 
         self.scaler.scale(w_loss).backward()
         wandb.log({'weights training loss': w_loss})
-        for i, loss in enumerate(loss_all):
-            wandb.log({f'training loss {i}': loss})
+        if self.forecast_only:
+            for i, loss in enumerate(loss_all):
+                wandb.log({f'training loss {i}': loss})
+        else:
+            for i, (l_b, l_f) in enumerate(zip(loss_backcast, loss_forecast)):
+                wandb.log({f'training loss backcast {i}': l_b})
+                wandb.log({f'training loss forecast {i}': l_f})
 
         if self.grad_clip > 0:
             self.scaler.unscale_(self.w_optimizer)
@@ -277,8 +296,21 @@ class ForecastingTrainer:
 
             prediction_val, w_dag_val = self.model(x_past_val, x_future_val, return_w_head=True)
             prediction = rescale_output(prediction_val, *scale_value_val, device=self.device)
-            a_loss = self.model.get_validation_loss(target_val, prediction,
-                                                    w_dag_val)
+
+            if self.forecast_only:
+                a_loss = self.model.get_validation_loss(
+                    target_val, prediction, w_dag_val
+                )
+            else:
+                backcast, forecast = prediction
+                target_val_backcast = val_X['past_targets'].float()[:, -self.window_size:, :].to(self.device)
+                loss_backcast = self.model.get_validation_loss(
+                    target_val_backcast, backcast, w_dag_val
+                )
+                loss_forecast = self.model.get_validation_loss(
+                    target_val, forecast, w_dag_val
+                )
+                a_loss = loss_backcast * self.backcast_loss_ration + loss_forecast
 
         self.scaler.scale(a_loss).backward()
 

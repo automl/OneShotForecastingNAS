@@ -72,13 +72,15 @@ class _Chomp1d(nn.Module):
 class TCNEncoderModule(nn.Module):
     def __init__(self, d_model: int, kernel_size: int = 15, stride: int = 1, dilation: int = 2, dropout: float = 0.2):
         super(TCNEncoderModule, self).__init__()
-        padding = (kernel_size - 1) * dilation
+        dilation1 = 1
+        padding = (kernel_size - 1) * dilation1
         self.conv1 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,
-                                           stride=stride, padding=padding, dilation=dilation))
+                                           stride=stride, padding=padding, dilation=dilation1))
         self.chomp1 = _Chomp1d(padding)
         self.relu1 = nn.ReLU()
         self.dropout1 = nn.Dropout(dropout)
 
+        padding = (kernel_size - 1) * dilation
         self.conv2 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,
                                            stride=stride, padding=padding, dilation=dilation))
         self.chomp2 = _Chomp1d(padding)
