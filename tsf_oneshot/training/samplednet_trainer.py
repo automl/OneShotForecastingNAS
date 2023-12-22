@@ -176,7 +176,8 @@ class SampledForecastingNetTrainer:
             torch.cuda.empty_cache()
 
 
-        self.evaluate(self.test_loader, epoch)
+        eval_res = self.evaluate(self.test_loader, epoch)
+        return eval_res
         #"""
 
         #self.evaluate_with_plot()
@@ -210,6 +211,10 @@ class SampledForecastingNetTrainer:
             'MSE loss': mse_losses,
             'MAE loss': mae_losses
         })
+        return {
+            'MSE loss': mse_losses,
+            'MAE loss': mae_losses
+        }
 
 
     def evaluate_with_plot(self):

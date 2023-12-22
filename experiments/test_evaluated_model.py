@@ -3,6 +3,7 @@ import numpy as np
 import os
 from pathlib import Path
 import random
+import json
 
 import hydra
 import numpy as np
@@ -251,8 +252,11 @@ def main(cfg: omegaconf.DictConfig):
     if (out_path / 'SampledNet' / 'Model').exists():
         epoch_start = trainer.load(out_path, model=model, w_optimizer=w_optimizer, lr_scheduler_w=lr_scheduler)
     for epoch in range(epoch_start, cfg.train.n_epochs):
-        trainer.train_epoch(epoch)
+        eval_res = trainer.train_epoch(epoch)
         trainer.save(out_path, epoch=epoch)
+
+        with open(out_path / 'eval_res.json', 'w') as f:
+            json.dump(eval_res)
 
 
 if __name__ == '__main__':
