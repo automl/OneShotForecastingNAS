@@ -122,7 +122,7 @@ def main(cfg: omegaconf.DictConfig):
         has_edges_encoder = [True] * len(operations_encoder)
 
         operations_decoder = archp_decoder.argmax(-1).tolist()
-        has_edges_decoder = [True] * len(archp_decoder)
+        has_edges_decoder = [True] * len(operations_decoder)
 
         head_idx = archp_head.argmax(-1)[0].item()
         HEAD = list(cfg.model.HEADS)[head_idx]
@@ -256,7 +256,7 @@ def main(cfg: omegaconf.DictConfig):
         trainer.save(out_path, epoch=epoch)
 
         with open(out_path / 'eval_res.json', 'w') as f:
-            json.dump(eval_res)
+            json.dump(eval_res, f)
 
 
 if __name__ == '__main__':
