@@ -368,7 +368,7 @@ class ForecastingTrainer:
         if lr_scheduler_a is not None:
             lr_scheduler_a.load_state_dict(trainer_info['lr_scheduler_a'])
 
-        return model, w_optimizer, lr_scheduler_w, lr_scheduler_a, trainer_info.get('epoch', 0)
+        return trainer_info.get('epoch', 0)
 
 
 class ForecastingDARTSSecondOrderTrainer(ForecastingTrainer):

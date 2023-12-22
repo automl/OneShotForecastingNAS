@@ -102,12 +102,11 @@ class SampledDecoder(SampledEncoder):
     def cells_forward(self, states: list[torch.Tensor],
                       cells_encoder_output: list[torch.Tensor], net_encoder_output: torch.Tensor, **kwargs):
         cell_out = None
-        cell_intermediate_steps = []
         for cell_encoder_output, cell in zip(cells_encoder_output, self.cells):
             cell_out = cell(s_previous=states,
                             cell_encoder_output=cell_encoder_output, net_encoder_output=net_encoder_output)
             states = [*states[1:], cell_out]
-        return cell_out, cell_intermediate_steps
+        return cell_out
 
 
 class SampledNet(nn.Module):
@@ -128,7 +127,7 @@ class SampledNet(nn.Module):
                  OPS_kwargs: dict[str, dict],
                  HEAD: str,
                  HEADS_kwargs: dict[str, dict],
-                 forecast_only: bool = False
+                 forecast_only: bool = True
                  ):
         super(SampledNet, self).__init__()
         self.meta_info = dict(
@@ -203,7 +202,7 @@ class SampledNet(nn.Module):
                 x_future: torch.Tensor):
         cell_encoder_out, cell_intermediate_steps = self.encoder(x_past)
 
-        cell_decoder_out = self.decoder(future_features=x_future,
+        cell_decoder_out = self.decoder(x=x_future,
                                         cells_encoder_output=cell_intermediate_steps,
                                         net_encoder_output=cell_encoder_out)
         forecast = self.head(cell_decoder_out)
