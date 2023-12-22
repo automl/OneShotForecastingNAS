@@ -33,7 +33,7 @@ class AbstractForecastingNetworkController(nn.Module):
                  HEADS: list[str],
                  HEADS_kwargs: dict[str, dict] = {},
                  OPS_kwargs: dict[str, dict] = {},
-                 val_loss_criterion: str = 'mae'
+                 val_loss_criterion: str = 'mse'
                  ):
         self.meta_info = dict(
             d_input_past=d_input_past, d_input_future=d_input_future,
