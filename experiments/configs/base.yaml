@@ -13,24 +13,27 @@ benchmark:
   metric: mean_MASE_forecasting
 
 dataloader:
-  batch_size: 16
-  window_size_coefficient: 1.25
+  batch_size: 24
+  window_size: 96
+  # window_size_coefficient: 1.25
+  num_batches_per_epoch: 500
 
 
 model:
   type: ???
   grad_order: ???
+  model_type: ???
 
   d_model: ???
   n_cells: ???
   n_nodes: ???
   n_cell_input_nodes: ???
 
-  PRIMITIVES_encoder: ['lstm','gru','transformer', 'tcn', 'skip_connection']
+  PRIMITIVES_encoder: ['mlp_mix','gru','transformer', 'tcn', 'skip_connection']
   # PRIMITIVES_encoder: ['transformer']
-  PRIMITIVES_decoder: [ 'lstm', 'gru','transformer', 'tcn', 'skip_connection' ]
+  PRIMITIVES_decoder: [ 'mlp_mix', 'gru','transformer', 'tcn', 'skip_connection' ]
   #  PRIMITIVES_decoder: ['lstm']
-  HEADS: ['quantile', 'mse', 'mae', 'studentT']
+  HEADS: ['quantile', 'mse', 'mae']
 
 val_share: 0.5
 
@@ -44,7 +47,7 @@ train:
 
 w_optimizer:
   type: 'sgd'
-  lr: 0.1
+  lr: 0.025
   weight_decay: 5e-4
   momentum: 0.9
 
@@ -63,9 +66,9 @@ lr_scheduler:
   eta_min: 1e-3
 
 wandb:
-  name: ${model.type}_${model.grad_order}
+  name: ${model.type}_${model.model_type}_${model.grad_order}
   group: ${benchmark.name}
   project: OneShotForecasting
   entity: ddeng
-  mode: online
+  mode: disabled
 

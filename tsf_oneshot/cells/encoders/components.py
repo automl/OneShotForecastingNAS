@@ -70,7 +70,7 @@ class _Chomp1d(nn.Module):
 
 
 class TCNEncoderModule(nn.Module):
-    def __init__(self, d_model: int, kernel_size: int = 7, stride: int = 1, dilation: int = 1, dropout: float = 0.2):
+    def __init__(self, d_model: int, kernel_size: int = 15, stride: int = 1, dilation: int = 2, dropout: float = 0.2):
         super(TCNEncoderModule, self).__init__()
         padding = (kernel_size - 1) * dilation
         self.conv1 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,
@@ -101,6 +101,37 @@ class TCNEncoderModule(nn.Module):
         out = out.transpose(1, 2).contiguous()
         out = self.norm(out)
 
+        hx = out[:, [-1]].transpose(0, 1)
+        return out, hx, self.hx_encoder_layer(hx)
+
+
+class MLPMixEncoderModule(nn.Module):
+    # https://arxiv.org/pdf/2303.06053.pdf
+    def __init__(self, d_model: int, window_size: int, dropout: float = 0.1, forecasting_horizon: int=0):
+        super(MLPMixEncoderModule, self).__init__()
+        self.time_mixer = nn.Sequential(
+            nn.Linear(window_size, window_size),
+            nn.ReLU(),
+            nn.Dropout(dropout)
+        )
+        self.time_norm = nn.LayerNorm(window_size)
+
+        self.feature_mixer = nn.Sequential(
+            nn.Linear(d_model, d_model),
+            nn.ReLU(),
+            nn.Dropout(dropout)
+        )
+        self.feature_norm = nn.LayerNorm(d_model)
+        self.hx_encoder_layer = nn.Linear(d_model, d_model)
+
+    def forward(self, x_past: torch.Tensor, hx: Any | None = None):
+        input_t = x_past.transpose(1, 2).contiguous()
+        out_t = self.time_mixer(input_t)
+        out_t = self.time_norm(out_t + input_t)
+
+        input_f = out_t.transpose(1, 2).contiguous()
+        out_f = self.feature_mixer(input_f)
+        out = self.feature_norm(input_f + out_f)
         hx = out[:, [-1]].transpose(0, 1)
         return out, hx, self.hx_encoder_layer(hx)
 

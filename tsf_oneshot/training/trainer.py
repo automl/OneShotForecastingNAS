@@ -16,9 +16,10 @@ from tsf_oneshot.networks.network_controller import (
 
 import wandb
 
+from torch import nn
 import torch
 import numpy as np
-from tsf_oneshot.training_utils import scale_value, rescale_output
+from tsf_oneshot.training.training_utils import scale_value, rescale_output
 
 
 def save_images(batch_idx, var_idx, kwargs):
@@ -33,36 +34,34 @@ def save_images(batch_idx, var_idx, kwargs):
     future = target_train[batch_idx, :, var_idx].cpu().detach().numpy()
 
     prediction = prediction_train[0][1][batch_idx, :, var_idx].cpu().detach().numpy()
-    fig, ax = plt.subplots()
-    ax.plot(past, label='Past')
-    ax.plot(np.arange(len(past), len(past) + len(prediction)),
+    fig, ax = plt.subplots(2, 1)
+    ax[0].plot(past, label='Past')
+    ax[0].plot(np.arange(len(past), len(past) + len(prediction)),
              future, label='GroundTRUTH')
-    ax.plot(np.arange(len(past), len(past) + len(prediction)),
+    ax[0].plot(np.arange(len(past), len(past) + len(prediction)),
              prediction, label='Prediction')
-    ax.legend()
-    ax.set_title('Train')
+    ax[0].legend()
+    ax[0].set_title('Train')
     i = 0
     for _ in range(10000):
         if Path(f'train_{i}_batch_{batch_idx}_var_{var_idx}.png').exists():
             i += 1
         else:
             break
-    fig.savefig(f'train_{i}_batch_{batch_idx}_var_{var_idx}.png')
 
     past = val_X['past_targets'][batch_idx, :, var_idx].cpu().detach().numpy()
     future = target_val[batch_idx, :, var_idx].cpu().detach().numpy()
 
     prediction = prediction_val[0][1][batch_idx, :, var_idx].cpu().detach().numpy()
-    fig, ax = plt.subplots()
 
-    ax.plot(past, label='Past')
-    ax.plot(np.arange(len(past), len(past) + len(prediction)),
+    ax[1].plot(past, label='Past')
+    ax[1].plot(np.arange(len(past), len(past) + len(prediction)),
              future, label='GroundTRUTH')
-    ax.plot(np.arange(len(past), len(past) + len(prediction)),
+    ax[1].plot(np.arange(len(past), len(past) + len(prediction)),
              prediction, label='Prediction')
-    ax.legend()
-    ax.set_title('val')
-    fig.savefig(f'val_{i}_batch_{batch_idx}_var_{var_idx}.png')
+    ax[1].legend()
+    ax[1].set_title('val')
+    fig.savefig(f'train_val{i}_batch_{batch_idx}_var_{var_idx}.png')
 
 
 def pad_tensor(tensor_to_be_padded: torch.Tensor, target_length: int) -> torch.Tensor:
@@ -100,8 +99,9 @@ class ForecastingTrainer:
                  target_scaler: TargetScaler,
                  grad_clip: float = 0,
                  device: torch.device = torch.device('cuda'),
-                 amp_enable: bool = False
+                 amp_enable: bool = False,
                  ):
+
         self.model = model.to(device)
         self.w_optimizer = w_optimizer
         self.a_optimizer = a_optimizer
@@ -158,7 +158,8 @@ class ForecastingTrainer:
                                                                                        self.window_size,
                                                                                        self.lagged_values,
                                                                                        self.cached_lag_mask_encoder)
-
+        if self.model.only_require_targets:
+            return truncated_past_targets, None, (loc, scale)
 
         if past_features is not None:
             if self.window_size <= past_features.shape[1]:
@@ -197,23 +198,30 @@ class ForecastingTrainer:
 
         for (train_X, train_y), (val_X, val_y) in tzip(self.train_loader, self.val_loader):
             # update model weights
-            w_loss = self.update_weights(train_X, train_y)
+
+            torch.cuda.empty_cache()
+            w_loss, _ = self.update_weights(train_X, train_y)
+            torch.cuda.empty_cache()
             self.update_alphas(val_X, val_y)
+
             """
+            w_loss, prediction_train = self.update_weights(train_X, train_y)
+            a_loss, prediction_val = self.update_alphas(val_X, val_y)
+
             from functools import partial
 
             kwargs = {
                 'train_X': train_X,
-                'target_train': target_train,
-                'prediction_train': rescale_output(prediction_train, *scale_value_train, device=self.device),
+                'target_train': train_y['future_targets'].float(),
+                'prediction_train': prediction_train,
                 'val_X': val_X,
-                'target_val': target_val,
-                'prediction_val':  rescale_output(prediction_val, *scale_value_val, device=self.device),
+                'target_val': val_y['future_targets'].float(),
+                'prediction_val': prediction_val,
             }
             func = partial(save_images, kwargs=kwargs)
             import pdb
             pdb.set_trace()
-            """
+            #"""
 
         return w_loss.detach().cpu()
 
@@ -222,10 +230,12 @@ class ForecastingTrainer:
         target_train = train_y['future_targets'].float().to(self.device)
 
         self.w_optimizer.zero_grad()
+
         with torch.cuda.amp.autocast(enabled=self.amp_enable):
             prediction_train, w_dag_train = self.model(x_past_train, x_future_train, return_w_head=True)
+            prediction = rescale_output(prediction_train, *scale_value_train, device=self.device)
             loss_all = self.model.get_individual_training_loss(
-                target_train, rescale_output(prediction_train, *scale_value_train, device=self.device),
+                target_train, prediction,
             )
             if isinstance(self.model, ForecastingDARTSNetworkController):
                 w_loss = sum([w * loss for w, loss in zip(w_dag_train[0], loss_all)])
@@ -254,11 +264,9 @@ class ForecastingTrainer:
             self.scaler.unscale_(self.w_optimizer)
             gradient_norm = self.model.grad_norm_weights()
             wandb.log({'gradient_norm_weights': gradient_norm})
-
         self.scaler.step(self.w_optimizer)
         self.scaler.update()
-
-        return w_loss
+        return w_loss, prediction
 
     def update_alphas(self, val_X, val_y):
         x_past_val, x_future_val, scale_value_val = self.preprocessing(val_X)
@@ -266,10 +274,10 @@ class ForecastingTrainer:
 
         self.a_optimizer.zero_grad()
         with torch.cuda.amp.autocast(enabled=self.amp_enable):
-            prediction_val, w_dag_val = self.model(x_past_val, x_future_val, return_w_head=True)
 
-            a_loss = self.model.get_validation_loss(target_val, rescale_output(prediction_val, *scale_value_val,
-                                                                               device=self.device),
+            prediction_val, w_dag_val = self.model(x_past_val, x_future_val, return_w_head=True)
+            prediction = rescale_output(prediction_val, *scale_value_val, device=self.device)
+            a_loss = self.model.get_validation_loss(target_val, prediction,
                                                     w_dag_val)
 
         self.scaler.scale(a_loss).backward()
@@ -288,6 +296,7 @@ class ForecastingTrainer:
 
         self.scaler.step(self.a_optimizer)
         self.scaler.update()
+        return a_loss, prediction
 
     def save(self, save_path: Path, epoch: int):
         if not save_path.exists():
@@ -327,7 +336,7 @@ class ForecastingTrainer:
         if lr_scheduler_a is not None:
             lr_scheduler_a.load_state_dict(trainer_info['lr_scheduler_a'])
 
-        return trainer_info.get('epoch', 0)
+        return model, w_optimizer, lr_scheduler_w, lr_scheduler_a, trainer_info.get('epoch', 0)
 
 
 class ForecastingDARTSSecondOrderTrainer(ForecastingTrainer):

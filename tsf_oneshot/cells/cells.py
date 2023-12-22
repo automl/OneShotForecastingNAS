@@ -7,14 +7,13 @@ import numpy as np
 import torch
 from torch import nn
 
-from tsf_oneshot.cells.encoders import PRIMITIVES_Encoder
+from tsf_oneshot.cells.encoders import PRIMITIVES_Encoder, PRIMITIVES_FLAT_ENCODER
 from tsf_oneshot.cells.decoders import PRIMITIVES_Decoder
-from tsf_oneshot.cells.ops import MixedEncoderOp, MixedDecoderOps
-
+from tsf_oneshot.cells.ops import MixedEncoderOps, MixedDecoderOps, MixedFlatEncoderOps
 
 class AbstractSearchEncoderCell(nn.Module):
     aggregtrate_type = 'sum'
-    op_types = MixedEncoderOp
+    op_types = MixedEncoderOps
     """Cell for searchs
     Each edge is mixed and continuous relaxed.
 
@@ -26,12 +25,15 @@ class AbstractSearchEncoderCell(nn.Module):
         preproc1: Preprocessing operation for the s1 input
     """
 
-    def __init__(self, n_nodes: int,
-                 forecasting_horizon: int,
+    def __init__(self,
+                 n_nodes: int,
+                 d_model: int,
                  n_input_nodes: int = 1,
-                 d_model: int = 128,
                  PRIMITIVES: list[str] = PRIMITIVES_Encoder.keys(),
-                 is_first_cell: bool=False,):
+                 OPS_kwargs: dict[str, dict] = {},
+                 is_first_cell: bool = False,
+                 **kwargs,
+                 ):
         """
         Args:
             n_nodes (int): Number of intermediate nodes. The output of the cell is calculated by
@@ -54,10 +56,14 @@ class AbstractSearchEncoderCell(nn.Module):
         for i in range(n_input_nodes, self.max_nodes):
             # The first 2 nodes are input nodes
             for j in range(i):
-                OPS_kwargs = {'mlp': {'forecasting_horizon': forecasting_horizon}}
                 if is_first_cell:
                     if i == n_input_nodes and j == 0:
-                        OPS_kwargs.update({'transformer': {'is_first_layer': True}})
+                        if 'transformer' in OPS_kwargs:
+                            OPS_kwargs['transformer'].update(
+                                {'is_first_layer': True}
+                            )
+                        else:
+                            OPS_kwargs.update({'transformer': {'is_first_layer': True}})
                 node_str = f"{i}<-{j}"
                 op = self.op_types(self.d_model,
                                    PRIMITIVES=PRIMITIVES,
@@ -77,14 +83,6 @@ class AbstractSearchEncoderCell(nn.Module):
         self.edge2index = {key: i for i, key in enumerate(self.edge_keys)}
         self.num_edges = len(self.edges)
 
-    def input_preprocessing(self, s0: torch.Tensor, s1: torch.Tensor) -> list[torch.Tensor]:
-        """preprocessing the inputs"""
-        s0 = self.preproc0(s0)
-        s1 = self.preproc1(s1)
-
-        states = [s0, s1]
-        return states
-
     def extra_repr(self):
         string = "info :: {max_nodes} nodes, inC={in_dim}, outC={out_dim}".format(
             **self.__dict__
@@ -100,6 +98,8 @@ class AbstractSearchEncoderCell(nn.Module):
             "PRIMITIVES": self.op_names_all,
         }
         return meta_info
+
+
 
 
 class SearchDARTSEncoderCell(AbstractSearchEncoderCell):
@@ -135,17 +135,21 @@ class SearchDARTSEncoderCell(AbstractSearchEncoderCell):
         states = copy.copy(s_previous)
 
         for i in range(self.n_input_nodes, self.max_nodes):
-            s_cur = 0.0
+            s_curs = []
             for j in range(i):
                 node_str = f"{i}<-{j}"
                 if node_str in self.edges:
-                    s_cur += self.get_edge_output1(node_str=node_str, x=states[j],
-                                                   w_dag=w_dag, alpha_prune_threshold=alpha_prune_threshold, **kwargs)
-            states.append(s_cur)
+                    s_curs.append(self.get_edge_output1(node_str=node_str, x=states[j],
+                                                        w_dag=w_dag, alpha_prune_threshold=alpha_prune_threshold,
+                                                        **kwargs))
+            states.append(self.aggregrate_outputs(s_curs))
 
         # s_out = torch.cat(states[self.n_input_nodes:], dim=-1)  # to be compatible with few-shot architecture, we sum over all the states
         s_out = states[-1]  # to save some memory
         return s_out
+
+    def aggregrate_outputs(self, s_curs: list[torch.Tensor]):
+        return sum(s_curs) / len(s_curs)
 
     def get_edge_output1(self, node_str, x, w_dag, alpha_prune_threshold, **kwargs):
         edge_out = self.edges[node_str](x_past=x, weights=w_dag[self.edge2index[node_str]],
@@ -188,13 +192,13 @@ class SearchGDASEncoderCell(AbstractSearchEncoderCell):
     """
 
     def process_output(self, state):
-        return sum(state[self.n_input_nodes:])
+        return state[-1]
 
     def forward(self, s_previous: list[torch.Tensor], w_dag: list[list[float]], edge_output_func=None, **kwargs):
         # TODO update the GDAS forward functions!
         states = copy.copy(s_previous)
         if edge_output_func is None:
-            edge_output_func = self.get_edge_output()
+            edge_output_func = self.get_edge_output
 
         for i in range(len(s_previous), self.max_nodes):
             s_cur = 0.0
@@ -218,8 +222,9 @@ class SearchGDASEncoderCell(AbstractSearchEncoderCell):
                             )
 
     def get_edge_output_gdas(self, w_dag, x, node_str, index, **kwargs):
-        weights = w_dag[self.edge2index[node_str]]
-        argmaxs = index[self.edge2index[node_str]].item()
+        edge_idx = self.edge2index[node_str]
+        weights = w_dag[edge_idx]
+        argmaxs = index[edge_idx].item()
         edge = self.edges[node_str]
         edge_out = edge[argmaxs](x_past=x)
         weigsum = sum(
@@ -321,13 +326,91 @@ class SearchGDASEncoderCell(AbstractSearchEncoderCell):
     """
 
 
-class SearchGDASEncoderCell2(SearchGDASEncoderCell):
-    def process_output(self, states):
-        return states[-1]
+class SearchDARTSFlatEncoderCell(SearchDARTSEncoderCell):
+    def __init__(self,
+                 n_nodes: int,
+                 window_size: int,
+                 forecasting_horizon: int,
+                 n_input_nodes: int = 1,
+                 PRIMITIVES: list[str] = PRIMITIVES_FLAT_ENCODER.keys(),
+                 OPS_kwargs: dict[str, dict] = {},
+                 is_last_cell: bool = False, ):
+        nn.Module.__init__(self)
+        self.max_nodes = n_nodes + n_input_nodes
+        self.window_size = window_size
+        self.forecasting_horizon = forecasting_horizon
+        self.n_input_nodes = n_input_nodes
+        self.PRIMITIVES = PRIMITIVES
+        self.OPS_kwargs = OPS_kwargs
+        self.is_last_cell = is_last_cell
+
+        self.edges = nn.ModuleDict()
+
+        for i in range(n_input_nodes, self.max_nodes):
+            # The first 2 nodes are input nodes
+            for j in range(i):
+                if is_last_cell:
+                    if i == self.max_nodes - 1 and j == i - 1:
+                        if 'mlp' in OPS_kwargs:
+                            OPS_kwargs['mlp'].update(
+                                {'is_last_layer': True}
+                            )
+                        else:
+                            OPS_kwargs.update({'mlp': {'is_last_layer': True}})
+                node_str = f"{i}<-{j}"
+                op = self.op_types(window_size=window_size,
+                                   forecasting_horizon=forecasting_horizon,
+                                   PRIMITIVES=PRIMITIVES,
+                                   OPS_kwargs=OPS_kwargs)  # TODO check if PRIMITIVES fits the requirements?
+                self.edges[node_str] = op
+
+        self.edge_keys = sorted(list(self.edges.keys()))
+        self.edge2index = {key: i for i, key in enumerate(self.edge_keys)}
+        self.num_edges = len(self.edges)
+
+    op_types = MixedFlatEncoderOps
+
+    def get_edge_output1(self, node_str, x, w_dag, alpha_prune_threshold, **kwargs):
+        edge_out = self.edges[node_str](x_past=x, weights=w_dag[self.edge2index[node_str]],
+                                        alpha_prune_threshold=alpha_prune_threshold)
+        return edge_out
+
+
+class SearchGDASFlatEncoderCell(SearchDARTSFlatEncoderCell, SearchGDASEncoderCell):
+    op_types = MixedFlatEncoderOps
+
+    def get_edge_output(self, w_dag, x, node_str, **kwargs):
+        weights = w_dag[self.edge2index[node_str]]
+        edge_out = self.edges[node_str](x_past=x, weights=weights)
+        return edge_out
+
+    def get_edge_output_gdas(self, w_dag, x, node_str, index, **kwargs):
+        weights = w_dag[self.edge2index[node_str]]
+        argmaxs = index[self.edge2index[node_str]].item()
+        edge = self.edges[node_str]
+        edge_out = edge[argmaxs](x_past=x)
+        weigsum = sum(
+            weights[_ie] for _ie in range(self.n_ops) if _ie != argmaxs
+        )
+        edge_out = weights[argmaxs] * edge_out + weigsum
+        return edge_out
+
+    def get_edge_output_gdasv1(self, w_dag, x, node_str, index, **kwargs):
+        weights = w_dag[self.edge2index[node_str]]
+        argmaxs = index[self.edge2index[node_str]].item()
+        edge_out = self.edges[node_str][argmaxs](x_past=x)
+        edge_out = weights[argmaxs] * edge_out
+        return edge_out
+
+    def get_edge_output_select(self, w_dag, x, node_str, **kwargs):
+        weights = w_dag[self.edge2index[node_str]]
+        edge_out = self.edges[node_str][weights.argmax().item()](x_past=x)
+        return edge_out
 
 
 class SearchGDASDecoderCell(SearchGDASEncoderCell):
     op_types = MixedDecoderOps
+
     def get_edge_output(self, w_dag, x, node_str, cell_encoder_output, net_encoder_output, **kwargs):
         weights = w_dag[self.edge2index[node_str]]
         encoder_out_edge = cell_encoder_output[node_str]
@@ -382,16 +465,17 @@ class SearchGDASDecoderCell(SearchGDASEncoderCell):
         return edge_out[0]
 
 
-class SampledEncoderCell(AbstractSearchEncoderCell):
+class SampledEncoderCell(nn.Module):
     all_ops = PRIMITIVES_Encoder
+
     def __init__(self, n_nodes: int,
-                 forecasting_horizon: int,
                  n_input_nodes: int,
                  d_model: int,
                  operations: list[int],
                  has_edges: list[bool],
                  PRIMITIVES: list[str] = PRIMITIVES_Encoder.keys(),
-                 is_first_cell: bool=False,):
+                 OPS_kwargs: dict[str, dict] = {},
+                 is_first_cell: bool = False, ):
         """
         Args:
             n_nodes (int): Number of intermediate nodes. The output of the cell is calculated by
@@ -407,16 +491,19 @@ class SampledEncoderCell(AbstractSearchEncoderCell):
 
         # generate dag
         self.edges = nn.ModuleDict()
-        assert len(node_strs) == len(operations)
 
         k = 0
         for i in range(n_input_nodes, self.max_nodes):
             # The first 2 nodes are input nodes
             for j in range(i):
-                OPS_kwargs = {'mlp': {'forecasting_horizon': forecasting_horizon}}
                 if is_first_cell:
                     if i == n_input_nodes and j == 0:
-                        OPS_kwargs.update({'transformer': {'is_first_layer': True}})
+                        if 'transformer' in OPS_kwargs:
+                            OPS_kwargs['transformer'].update(
+                                {'is_first_layer': True}
+                            )
+                        else:
+                            OPS_kwargs.update({'transformer': {'is_first_layer': True}})
                 if has_edges[k]:
                     node_str = f"{i}<-{j}"
                     op_name = PRIMITIVES[operations[k]]
@@ -453,28 +540,32 @@ class SampledEncoderCell(AbstractSearchEncoderCell):
         states = copy.copy(s_previous)
 
         for i in range(self.n_input_nodes, self.max_nodes):
-            s_cur = 0.0
+            s_curs = []
             for j in range(i):
                 node_str = f"{i}<-{j}"
                 if node_str in self.edges:
-                    s_cur += self.get_edge_output1(node_str=node_str, x=states[j],
-                                                   **kwargs)
-            states.append(s_cur)
+                    s_curs.append(self.get_edge_output(node_str=node_str, x=states[j], **kwargs))
+
+            states.append(self.aggregrate_outputs(s_curs))
 
         # s_out = torch.cat(states[self.n_input_nodes:], dim=-1)  # to be compatible with few-shot architecture, we sum over all the states
         s_out = states[-1]  # to save some memory
+
         return s_out
 
+    def aggregrate_outputs(self, s_curs: list[torch.Tensor]):
+        return sum(s_curs) / len(s_curs)
 
-    def get_edge_output1(self, node_str, x, **kwargs):
+    def get_edge_output(self, node_str, x, **kwargs):
         edge_out = self.edges[node_str](x_past=x)
         self.intermediate_outputs[node_str] = edge_out
         return edge_out[0]
 
-class SampledDecoderCell(AbstractSearchEncoderCell):
+
+class SampledDecoderCell(SampledEncoderCell):
     all_ops = PRIMITIVES_Decoder
 
-    def get_edge_output1(self, node_str, x,
+    def get_edge_output(self, node_str, x,
                          cell_encoder_output, net_encoder_output):
         encoder_out_edge = cell_encoder_output[node_str]
         edge_out = self.edges[node_str](x_future=x,
@@ -483,4 +574,67 @@ class SampledDecoderCell(AbstractSearchEncoderCell):
                                         hx1=encoder_out_edge[1],
                                         hx2=encoder_out_edge[2])
 
+        return edge_out
+
+
+class SampledFlatEncoderCell(SampledEncoderCell):
+    all_ops = PRIMITIVES_FLAT_ENCODER
+
+    def __init__(self, n_nodes: int,
+                 n_input_nodes: int,
+                 window_size: int,
+                 forecasting_horizon: int,
+                 operations: list[int],
+                 has_edges: list[bool],
+                 PRIMITIVES: list[str] = PRIMITIVES_Encoder.keys(),
+                 OPS_kwargs: dict[str, dict] = {},
+                 is_last_cell: bool = False, ):
+        """
+        Args:
+            n_nodes (int): Number of intermediate nodes. The output of the cell is calculated by
+                concatenating the outputs of all intermediate nodes in the cell.
+            d_model (int): model dimensions
+            PRIMITIVES (list[str]): a list of all possible operations in this cells (the top one-shot model)
+        """
+        nn.Module.__init__(self)
+        self.max_nodes = n_nodes + n_input_nodes
+        self.n_input_nodes = n_input_nodes
+
+        self.window_size = window_size
+        self.forecasting_horizon = forecasting_horizon
+
+        # generate dag
+        self.edges = nn.ModuleDict()
+
+        k = 0
+        for i in range(n_input_nodes, self.max_nodes):
+            # The first 2 nodes are input nodes
+            for j in range(i):
+                if is_last_cell:
+                    if i == self.max_nodes - 1 and j == i-1:
+                        if 'mlp' in OPS_kwargs:
+                            OPS_kwargs['mlp'].update(
+                                {'is_last_layer': True}
+                            )
+                        else:
+                            OPS_kwargs.update({'transformer': {'is_last_layer': True}})
+                if has_edges[k]:
+                    node_str = f"{i}<-{j}"
+                    op_name = PRIMITIVES[operations[k]]
+                    op_kwargs = OPS_kwargs.get(op_name, {})
+                    op = self.all_ops[op_name](window_size=self.window_size,
+                                               forecasting_horizon=self.forecasting_horizon, **op_kwargs)
+                    self.edges[node_str] = op
+                    k += 1
+
+        self.edge_keys = sorted(list(self.edges.keys()))
+        self.edge2index = {key: i for i, key in enumerate(self.edge_keys)}
+        self.num_edges = len(self.edges)
+
+        self.intermediate_outputs = {
+            key: None for key in self.edge_keys
+        }
+
+    def get_edge_output(self, node_str, x, **kwargs):
+        edge_out = self.edges[node_str](x_past=x)
         return edge_out

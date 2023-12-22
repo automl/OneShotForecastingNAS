@@ -71,7 +71,7 @@ class TransformerDecoderModule(ForecastingDecoderLayer):
 
 
 class TCNDecoderModule(ForecastingDecoderLayer):
-    def __init__(self, d_model: int, kernel_size: int = 7, stride: int = 1, dilation: int = 1, dropout: float = 0.1):
+    def __init__(self, d_model: int, kernel_size: int = 15, stride: int = 1, dilation: int = 2, dropout: float = 0.1):
         super(TCNDecoderModule, self).__init__()
         padding = (kernel_size - 1) * dilation
         self.conv1 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,
@@ -106,6 +106,45 @@ class TCNDecoderModule(ForecastingDecoderLayer):
         return self.norm(out)
 
 
+class MLPMixDecoderModule(ForecastingDecoderLayer):
+    # https://arxiv.org/pdf/2303.06053.pdf
+    def __init__(self,
+                 d_model: int,
+                 window_size: int,
+                 forecasting_horizon: int,
+                 dropout: float=0.1
+                 ):
+        super(MLPMixDecoderModule, self).__init__()
+        self.forecasting_horizon = forecasting_horizon
+        self.time_mixer = nn.Sequential(
+            nn.Linear(window_size + forecasting_horizon, forecasting_horizon),
+            nn.ReLU(),
+            nn.Dropout(dropout)
+        )
+        self.time_norm = nn.LayerNorm(forecasting_horizon)
+
+        self.feature_mixer = nn.Sequential(
+            nn.Linear(d_model, d_model),
+            nn.ReLU(),
+            nn.Dropout(dropout)
+        )
+        self.feature_norm = nn.LayerNorm(d_model)
+
+    def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
+                hx1: torch.Tensor, hx2: torch.Tensor):
+        input_t = torch.cat(
+            [encoder_output_net, x_future], dim=1
+        ).transpose(1, 2).contiguous()
+
+        out_t = self.time_mixer(input_t)
+
+        out_t = self.time_norm(out_t + input_t[:, :,-self.forecasting_horizon:])
+
+        input_f = out_t.transpose(1, 2).contiguous()
+        out_f = self.feature_mixer(input_f)
+        return self.feature_norm(input_f + out_f)
+
+"""
 class MLPDecoderModule(ForecastingDecoderLayer):
     def __init__(self,
                  d_model: int,
@@ -161,7 +200,7 @@ class MLPDecoderModule(ForecastingDecoderLayer):
         x = self.network_linear(x)
         x = self.norm(x)
         return x
-
+"""
 
 class IdentityDecoderModule(ForecastingDecoderLayer):
     def __init__(self, d_model: int):

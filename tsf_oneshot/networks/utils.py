@@ -59,6 +59,8 @@ def get_normalizer(normalizer: dict | None):
 
 
 def apply_normalizer(normalizer: dict, alpha):
+    if alpha.shape[1] == 1:
+        return torch.ones_like(alpha)
     return normalizer['func'](alpha, normalizer["params"])
 
 

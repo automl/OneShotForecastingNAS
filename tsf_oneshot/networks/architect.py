@@ -4,7 +4,7 @@ import copy
 import torch
 
 from tsf_oneshot.networks.network_controller import AbstractForecastingNetworkController
-from tsf_oneshot.training_utils import rescale_output
+from tsf_oneshot.training.training_utils import rescale_output
 
 
 class Architect():

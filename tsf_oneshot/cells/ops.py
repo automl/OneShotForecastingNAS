@@ -3,11 +3,11 @@ from typing import Optional, Union
 import torch
 from torch import nn
 
-from tsf_oneshot.cells.encoders import PRIMITIVES_Encoder
+from tsf_oneshot.cells.encoders import PRIMITIVES_Encoder, PRIMITIVES_FLAT_ENCODER
 from tsf_oneshot.cells.decoders import PRIMITIVES_Decoder
 
 
-class MixedEncoderOp(nn.Module):
+class MixedEncoderOps(nn.Module):
     """ Mixed operation """
     available_ops = PRIMITIVES_Encoder
 
@@ -58,7 +58,41 @@ class MixedEncoderOp(nn.Module):
             return len(self._ops_idx)
 
 
-class MixedDecoderOps(MixedEncoderOp):
+class MixedFlatEncoderOps(MixedEncoderOps):
+    available_ops = PRIMITIVES_FLAT_ENCODER
+
+    def __init__(self, window_size: int,
+                 forecasting_horizon: int,
+                 PRIMITIVES: list[str],
+                 OPS_kwargs: dict[str, dict] | None = None):
+        nn.Module.__init__(self)
+
+        self._ops = nn.ModuleList()
+
+        for primitive in PRIMITIVES:
+            op_kwargs = {"window_size": window_size,
+                         "forecasting_horizon": forecasting_horizon}
+            if OPS_kwargs is not None and primitive in OPS_kwargs:
+                op_kwargs.update(OPS_kwargs[primitive])
+            op = self.available_ops[primitive](**op_kwargs)
+
+            self._ops.append(op)
+
+        self._ops_names = PRIMITIVES
+
+    def forward(self, weights, alpha_prune_threshold=0.0, **model_input_kwargs):
+        """
+        Args:
+            weights: weight for each operation. We note that for subnetworks, "weights" indicate the architecture
+                weights of the un-split network, thereby, we need
+            alpha_prune_threshold: prune ops during forward pass if alpha below threshold
+        """
+        return sum(
+            weight * op(**model_input_kwargs) for weight, op in zip(weights, self._ops) if weight > alpha_prune_threshold
+        )
+
+
+class MixedDecoderOps(MixedEncoderOps):
     available_ops = PRIMITIVES_Decoder
 
     def forward(self, weights, alpha_prune_threshold=0.0, **model_input_kwargs):

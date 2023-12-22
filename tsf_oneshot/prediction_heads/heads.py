@@ -58,7 +58,7 @@ class MSEOutput(nn.Module):
         return self.net(x)
 
     def loss(self, targets: torch.Tensor, predictions: torch.Tensor):
-        return torch.mean((targets - predictions) ** 2)
+        return F.mse_loss(targets, predictions)
 
     def get_inference_pred(self, predictions: torch.Tensor):
         return predictions
@@ -66,10 +66,34 @@ class MSEOutput(nn.Module):
 
 class MAEOutput(MSEOutput):
     def loss(self, targets: torch.Tensor, predictions: torch.Tensor):
-        return torch.mean(torch.abs(targets - predictions))
+        return F.l1_loss(targets, predictions)
 
     def get_inference_pred(self, predictions: torch.Tensor):
         return predictions
+
+
+# TODO check if it is necessary to implement add an projection layer to these heads!
+
+class FlatMSEOutput(nn.Module):
+    def __init__(self, window_size: int = 0, forecasting_horizon: int = 0, back_cast_ration: float = 0.3):
+        super(FlatMSEOutput, self).__init__()
+        self.window_size = window_size
+        self.forecasting_horizon = forecasting_horizon
+        self.back_cast_ration = back_cast_ration
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x
+
+    def loss(self, targets: torch.Tensor, predictions: torch.Tensor):
+        return F.mse_loss(targets, predictions)
+
+    def get_inference_pred(self, predictions: torch.Tensor):
+        return predictions
+
+
+class FlatMAEOutput(FlatMSEOutput):
+    def loss(self, targets: torch.Tensor, predictions: torch.Tensor):
+        return F.l1_loss(targets, predictions)
 
 
 class DistProjectionLayer(nn.Module):
@@ -82,11 +106,11 @@ class DistProjectionLayer(nn.Module):
     # https://github.com/automl/Auto-PyTorch/blob/master/autoPyTorch/pipeline/components/setup/network_head/forecasting_network_head/distribution.py
 
     def __init__(
-        self,
-        d_model: int,
-        d_output: int,
-        inference_num_samples: int = 100,
-        inference_samples_agg: str = 'median',
+            self,
+            d_model: int,
+            d_output: int,
+            inference_num_samples: int = 100,
+            inference_samples_agg: str = 'median',
     ):
         super().__init__()
 
@@ -128,7 +152,7 @@ class DistProjectionLayer(nn.Module):
         return - predictions.log_prob(targets).mean()
 
     def get_inference_pred(self, predictions: Distribution):
-        samples = predictions.rsample((self.inference_num_samples, ))
+        samples = predictions.rsample((self.inference_num_samples,))
         if self.inference_samples_agg == 'mean':
             return torch.mean(samples, 0)
         elif self.inference_samples_agg == 'median':
@@ -157,7 +181,7 @@ class StudentTOutput(DistProjectionLayer):
         return {"df": 1, "loc": 1, "scale": 1}
 
     def domain_map(  # type: ignore[override]
-        self, df: torch.Tensor, loc: torch.Tensor, scale: torch.Tensor
+            self, df: torch.Tensor, loc: torch.Tensor, scale: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         scale = F.softplus(scale) + 1e-10
         df = 2.0 + F.softplus(df)
@@ -166,7 +190,7 @@ class StudentTOutput(DistProjectionLayer):
 
     @property
     def dist_cls(self) -> Type[Distribution]:
-        return StudentT   # type: ignore[no-any-return]
+        return StudentT  # type: ignore[no-any-return]
 
 
 class BetaOutput(DistProjectionLayer):
@@ -177,7 +201,7 @@ class BetaOutput(DistProjectionLayer):
         return {"concentration1": 1, "concentration0": 1}
 
     def domain_map(  # type: ignore[override]
-        self, concentration1: torch.Tensor, concentration0: torch.Tensor
+            self, concentration1: torch.Tensor, concentration0: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
         # TODO we need to adapt epsilon value given the datatype of this module
         epsilon = 1e-10
@@ -189,8 +213,7 @@ class BetaOutput(DistProjectionLayer):
     @property
     def dist_cls(self) -> Type[Distribution]:
         # TODO consider constraints on Beta!!!
-        return Beta   # type: ignore[no-any-return]
-
+        return Beta  # type: ignore[no-any-return]
 
 
 class GammaOutput(DistProjectionLayer):
@@ -201,7 +224,7 @@ class GammaOutput(DistProjectionLayer):
         return {"concentration": 1, "rate": 1}
 
     def domain_map(  # type: ignore[override]
-        self, concentration: torch.Tensor, rate: torch.Tensor
+            self, concentration: torch.Tensor, rate: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
         # TODO we need to adapt epsilon value given the datatype of this module
         epsilon = 1e-10
@@ -222,8 +245,8 @@ class PoissonOutput(DistProjectionLayer):
 
     def domain_map(self, rate: torch.Tensor) -> tuple[torch.Tensor]:  # type: ignore[override]
         rate_pos = F.softplus(rate).clone()
-        #return (rate_pos.squeeze(-1),)
-        return (rate_pos, )
+        # return (rate_pos.squeeze(-1),)
+        return (rate_pos,)
 
     @property
     def dist_cls(self) -> Type[Distribution]:

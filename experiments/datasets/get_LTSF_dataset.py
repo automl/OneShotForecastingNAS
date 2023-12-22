@@ -125,16 +125,16 @@ def get_train_dataset(root_path,
             y_train = [data[border1: border2]]
             start_times = [start_time]
         dataset_info.update({
-            'X_train': None,
-            'y_train':y_train,
+            'X': None,
+            'y':y_train,
             "start_times": start_times
         })
     elif series_type == 'S':
         Y = data[border1: border2].transpose()
         start_time = [pd.to_datetime(df_raw['date'][0]) for _ in range(len(Y))]
         dataset_info.update({
-            'X_train': None,
-            'y_train': Y,
+            'X': None,
+            'y': Y,
             "start_times": start_time
         })
     return dataset_info
@@ -150,12 +150,26 @@ def get_test_dataset(root_path,
                       target_name: str = 'OT',
                       do_normalization: bool = True,
                       make_dataset_uni_variant:bool = False,
-                      train_only=False) -> dict:
+                      train_only=False) -> tuple[dict, int, int]:
+    make_dataset_uni_variant = False
     assert flag == 'test'
+    if make_dataset_uni_variant:
+        raise NotImplementedError
     df_raw, data, border1, border2 = get_ltsf_dataset(root_path, file_name=file_name,
                                                       series_type=series_type, dataset_name=dataset_name, flag=flag,
                                                       target_name=target_name, do_normalization=do_normalization,
                                                       train_only=train_only)
+    start_time = pd.to_datetime(df_raw['date'][0])
+    start_times = [start_time]
+    dataset_info = {
+        'X': None,
+        'y': [data],
+        'start_times': start_times,
+        'n_prediction_steps': forecasting_horizon,
+        'freq': freq
+    }
+    return dataset_info, border2, len(data) - forecasting_horizon
+    """
     for idx in range(border2, len(data) - forecasting_horizon):
         Y = data[: idx]
         start_time = pd.to_datetime(df_raw['date'][0])
@@ -172,4 +186,5 @@ def get_test_dataset(root_path,
             'start_times': start_times,
         }
         yield dataset_info
+    """
 

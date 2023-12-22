@@ -5,7 +5,8 @@ import torch
 from torch import nn
 
 from tsf_oneshot.prediction_heads.heads import (
-    QuantileHead, MSEOutput, MAEOutput, GammaOutput, PoissonOutput, NormalOutput, StudentTOutput
+    QuantileHead, MSEOutput, MAEOutput, GammaOutput, PoissonOutput, NormalOutput, StudentTOutput,
+FlatMAEOutput, FlatMSEOutput,
 )
 
 PREDICTION_HEADS = {
@@ -14,6 +15,11 @@ PREDICTION_HEADS = {
     "mae": MAEOutput,
     "normal": NormalOutput,
     "studentT": StudentTOutput,
+}
+
+FLATPREDICTION_HEADS = {
+    'mae': FlatMAEOutput,
+    'mse': FlatMSEOutput
 }
 
 
@@ -60,3 +66,24 @@ class MixedHead(nn.Module):
 
     def __len__(self):
         return len(self._ops)
+
+
+class MixedFlatHEADAS(MixedHead):
+    available_ops = FLATPREDICTION_HEADS
+
+    def __init__(self,
+                 window_size: int,
+                 forecasting_horizon: int,
+                 PRIMITIVES: list[str],
+                 OPS_kwargs: dict[str, dict] | None = None):
+        nn.Module.__init__(self)
+        self._ops = nn.ModuleList()
+        for primitive in PRIMITIVES:
+            op_kwargs = {"window_size": window_size, 'forecasting_horizon': forecasting_horizon}
+            if primitive in OPS_kwargs:
+                op_kwargs.update(OPS_kwargs[primitive])
+            op = self.available_ops[primitive](**op_kwargs)
+
+            self._ops.append(op)
+
+        self._ops_names = PRIMITIVES

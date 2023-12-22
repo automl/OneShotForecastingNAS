@@ -220,8 +220,8 @@ def get_train_dataset(root_path,
     dataset_info = {
         'n_prediction_steps': forecast_horizon,
         'freq': freq,
-        'X_train': None,
-        'y_train': y_train,
+        'X': None,
+        'y': y_train,
         'start_times': train_start_time_list
     }
     return dataset_info, y_test
