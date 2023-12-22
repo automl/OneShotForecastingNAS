@@ -233,9 +233,6 @@ class SampledNet(nn.Module):
                                         cells_encoder_output=cell_intermediate_steps,
                                         net_encoder_output=cell_encoder_out)
 
-        cell_out = torch.cat([cell_encoder_out, cell_decoder_out], 1)
-        cell_out = self.head(cell_out)
-        back_cast, fore_cast = torch.split(cell_out, [cell_encoder_out.shape[1], cell_decoder_out.shape[1]], dim=1)
 
         return self.head(cell_decoder_out)
 

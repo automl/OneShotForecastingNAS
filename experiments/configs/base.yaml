@@ -47,7 +47,7 @@ train:
 
 w_optimizer:
   type: 'sgd'
-  lr: 0.025
+  lr: 0.1
   weight_decay: 5e-4
   momentum: 0.9
 

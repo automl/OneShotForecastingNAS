@@ -58,6 +58,7 @@ def save_images(batch_idx, var_idx, kwargs):
     ax[1].set_title('val')
     fig.savefig(f'train_val{i}_batch_{batch_idx}_var_{var_idx}.png')
 
+
 class SampledForecastingNetTrainer:
     def __init__(self,
                  model: SampledNet,
@@ -165,7 +166,7 @@ class SampledForecastingNetTrainer:
             self.lr_scheduler_w.step()
 
         # train model
-
+        #"""
         self.model.train()
         for (train_X, train_y) in tqdm(self.train_loader):
             # update model weights
@@ -176,8 +177,9 @@ class SampledForecastingNetTrainer:
 
 
         self.evaluate(self.test_loader, epoch)
+        #"""
 
-        # self.evaluate_with_plot()
+        #self.evaluate_with_plot()
 
     def evaluate(self, test_loader, epoch):
         mse_losses = []
@@ -209,7 +211,7 @@ class SampledForecastingNetTrainer:
             'MAE loss': mae_losses
         })
 
-    """
+
     def evaluate_with_plot(self):
         for (test_X, test_y) in tqdm(self.test_loader):
             x_past_test, x_future_test, scale_value_test = self.preprocessing(test_X)
@@ -244,10 +246,6 @@ class SampledForecastingNetTrainer:
                 'prediction_val': prediction_test,
             }
             func = partial(save_images, kwargs=kwargs)
-            func(0, 640)
-            import pdb
-            pdb.set_trace()
-        """
 
 
     def update_weights(self, train_X, train_y):
