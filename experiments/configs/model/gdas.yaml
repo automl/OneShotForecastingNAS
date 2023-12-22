@@ -5,6 +5,6 @@ model_type: seq
 grad_order: 1
 
 d_model: 256
-n_cells: 3
+n_cells: 2
 n_nodes: 5
 n_cell_input_nodes: 1

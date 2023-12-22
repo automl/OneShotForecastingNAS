@@ -4,7 +4,7 @@ model_type: flat
 
 grad_order: 1
 
-n_cells: 3
+n_cells: 2
 n_nodes: 4
 n_cell_input_nodes: 1
 
