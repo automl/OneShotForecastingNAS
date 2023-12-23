@@ -65,6 +65,7 @@ class SampledForecastingNetTrainer:
                  w_optimizer: torch.optim.Optimizer,
                  lr_scheduler_w: torch.optim.lr_scheduler.LRScheduler | None,
                  train_loader: torch.utils.data.DataLoader,
+                 val_loader: torch.utils.data.DataLoader,
                  test_loader: torch.utils.data.DataLoader,
                  window_size: int,
                  n_prediction_steps: int,
@@ -79,6 +80,7 @@ class SampledForecastingNetTrainer:
         self.w_optimizer = w_optimizer
 
         self.train_loader = train_loader
+        self.val_loader = val_loader
         self.test_loader = test_loader
 
         self.target_scaler = target_scaler
@@ -97,7 +99,6 @@ class SampledForecastingNetTrainer:
         self.grad_clip = grad_clip
         self.amp_enable = amp_enable
         self.scaler = torch.cuda.amp.GradScaler(enabled=amp_enable)
-
 
     def preprocessing(self, X: dict):
         past_targets = X['past_targets'].float()
@@ -175,14 +176,14 @@ class SampledForecastingNetTrainer:
             w_loss, _ = self.update_weights(train_X, train_y)
             torch.cuda.empty_cache()
 
-
-        eval_res = self.evaluate(self.test_loader, epoch)
+        val_res = self.evaluate(self.val_loader, epoch, 'val')
+        eval_res = self.evaluate(self.test_loader, epoch, 'test')
         return eval_res
         #"""
 
         #self.evaluate_with_plot()
 
-    def evaluate(self, test_loader, epoch):
+    def evaluate(self, test_loader, epoch, loader_type: str = 'test'):
         mse_losses = []
         mae_losses = []
         num_data_points = 0
@@ -205,15 +206,15 @@ class SampledForecastingNetTrainer:
 
         mean_mse_loses = sum(mse_losses) / num_data_points
         mean_mae_losses = sum(mae_losses) / num_data_points
-        print(f'test mse loss at epoch {epoch}: {mean_mse_loses}')
-        print(f'test mae loss at epochf {epoch}: {mean_mae_losses}')
+        print(f'{loader_type} mse loss at epoch {epoch}: {mean_mse_loses}')
+        print(f'{loader_type} mae loss at epochf {epoch}: {mean_mae_losses}')
         wandb.log({
-            'MSE loss': mse_losses,
-            'MAE loss': mae_losses
+            f'{loader_type} MSE loss': mean_mse_loses,
+            f'{loader_type} MAE loss': mean_mae_losses
         })
         return {
-            'MSE loss': mse_losses,
-            'MAE loss': mae_losses
+            'MSE loss': mean_mse_loses,
+            'MAE loss': mean_mae_losses
         }
 
 

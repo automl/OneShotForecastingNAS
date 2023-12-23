@@ -31,7 +31,7 @@ def get_ltsf_dataset(root_path,
                       do_normalization: bool = True,
                       train_only=False):
     assert flag in ['train', 'test']
-    type_map = {'train': 0, 'test': 1}
+    type_map = {'train': 0, 'test': 2}
     set_type = type_map[flag]
 
     dataset_path = Path(root_path) / file_name
@@ -40,23 +40,26 @@ def get_ltsf_dataset(root_path,
     df_raw = pd.read_csv(os.path.join(dataset_path))
 
     if dataset_name.startswith('ETTh'):
-        border1s = [0,                          12 * 30 * 24 + 4 * 30 * 24]
-        border2s = [12 * 30 * 24 + 4 * 30 * 24, 12 * 30 * 24 + 8 * 30 * 24]
+        border1s = [0, 12 * 30 * 24, 12 * 30 * 24 + 4 * 30 * 24]
+        border2s = [12 * 30 * 24, 12 * 30 * 24 + 4 * 30 * 24, 12 * 30 * 24 + 8 * 30 * 24]
     elif dataset_name.startswith('ETTm'):
-        border1s = [0,                                  12 * 30 * 24 * 4 + 4 * 30 * 24 * 4]
-        border2s = [12 * 30 * 24 * 4 + 4 * 30 * 24 * 4, 12 * 30 * 24 * 4 + 8 * 30 * 24 * 4]
+        border1s = [0, 12 * 30 * 24 * 4, 12 * 30 * 24 * 4 + 4 * 30 * 24 * 4]
+        border2s = [12 * 30 * 24 * 4, 12 * 30 * 24 * 4 + 4 * 30 * 24 * 4, 12 * 30 * 24 * 4 + 8 * 30 * 24 * 4]
     else:
-        num_train = int(len(df_raw) * (0.7 if not train_only else 1))
+        num_train = int(len(df_raw) * 0.7)
         num_test = int(len(df_raw) * 0.2)
+        num_vali = len(df_raw) - num_train - num_test
 
-        border1s = [0, len(df_raw) - num_test ]
-        border2s = [num_train, len(df_raw)]
+        border1s = [0, num_train, len(df_raw) - num_test ]
+        border2s = [num_train, num_train + num_vali, len(df_raw)]
+
 
     border1 = 0
     if flag == 'test':
         border2 = border1s[set_type]
     else:
-        border2 = border1s[1]
+        # we use the entire training and validaiton sets
+        border2 = border1s[2]
 
     if dataset_name.startswith('ETT'):
         if series_type == 'M' or series_type == 'MS':
@@ -88,8 +91,7 @@ def get_ltsf_dataset(root_path,
         data = scaler.transform(df_data.values)
     else:
         data = df_data.values
-
-    return df_raw, data, border1, border2
+    return df_raw, data, border1, border2, (border1s, border2s)
 
 
 def get_train_dataset(root_path,
@@ -105,7 +107,7 @@ def get_train_dataset(root_path,
                       train_only=False) -> dict:
     assert flag == 'train'
     make_dataset_uni_variant = False
-    df_raw, data, border1, border2 = get_ltsf_dataset(root_path, file_name=file_name,
+    df_raw, data, border1, border2, _ = get_ltsf_dataset(root_path, file_name=file_name,
                      series_type=series_type, dataset_name=dataset_name,flag=flag,
                      target_name=target_name, do_normalization=do_normalization,
                      train_only=train_only)
@@ -150,12 +152,12 @@ def get_test_dataset(root_path,
                       target_name: str = 'OT',
                       do_normalization: bool = True,
                       make_dataset_uni_variant:bool = False,
-                      train_only=False) -> tuple[dict, int, int]:
+                      train_only=False) -> tuple[dict, int, int, tuple]:
     make_dataset_uni_variant = False
     assert flag == 'test'
     if make_dataset_uni_variant:
         raise NotImplementedError
-    df_raw, data, border1, border2 = get_ltsf_dataset(root_path, file_name=file_name,
+    df_raw, data, border1, border2, (border1s, border2s) = get_ltsf_dataset(root_path, file_name=file_name,
                                                       series_type=series_type, dataset_name=dataset_name, flag=flag,
                                                       target_name=target_name, do_normalization=do_normalization,
                                                       train_only=train_only)
@@ -168,7 +170,7 @@ def get_test_dataset(root_path,
         'n_prediction_steps': forecasting_horizon,
         'freq': freq
     }
-    return dataset_info, border2, len(data) - forecasting_horizon
+    return dataset_info, border2, len(data) - forecasting_horizon, (border1s, border2s)
     """
     for idx in range(border2, len(data) - forecasting_horizon):
         Y = data[: idx]

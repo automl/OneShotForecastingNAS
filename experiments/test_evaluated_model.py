@@ -66,7 +66,7 @@ def main(cfg: omegaconf.DictConfig):
                                                                      'external_forecast_horizon', None)
                                                                  )
     elif dataset_type == 'LTSF':
-        data_info, split_begin, split_end = get_LTSF_dataset.get_test_dataset(dataset_root_path,
+        data_info, split_begin, split_end, (border1s, border2s) = get_LTSF_dataset.get_test_dataset(dataset_root_path,
                                                                               dataset_name=dataset_name,
                                                                               file_name=cfg.benchmark.file_name,
                                                                               series_type=cfg.benchmark.series_type,
@@ -93,13 +93,18 @@ def main(cfg: omegaconf.DictConfig):
 
     window_size = int(cfg.dataloader.window_size)
 
-    split = [np.arange(split_begin - dataset.n_prediction_steps), np.arange(split_begin, split_end)]
+    split = [
+        np.arange(window_size - 1, border2s[0] - dataset.n_prediction_steps),
+        np.arange(border1s[1] - 1, border2s[1] - dataset.n_prediction_steps),
+        np.arange(border1s[2] - 1, border2s[2] - dataset.n_prediction_steps),
 
-    train_data_loader, test_data_loader = get_dataloader(
+    ]
+
+    train_data_loader, val_data_loader, test_data_loader = get_dataloader(
         dataset=dataset, splits=split, batch_size=32,
         num_batches_per_epoch=cfg.dataloader.num_batches_per_epoch,
         window_size=window_size,
-        is_test_sets=[False, True],
+        is_test_sets=[False, True, True],
         batch_size_test=8,
     )
     num_targets = dataset.num_targets
@@ -238,6 +243,7 @@ def main(cfg: omegaconf.DictConfig):
         w_optimizer=w_optimizer,
         lr_scheduler_w=lr_scheduler,
         train_loader=train_data_loader,
+        val_loader=val_data_loader,
         test_loader=test_data_loader,
         window_size=window_size,
         n_prediction_steps=dataset.n_prediction_steps,
