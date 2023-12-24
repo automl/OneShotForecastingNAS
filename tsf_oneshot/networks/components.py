@@ -24,6 +24,7 @@ class EmbeddingLayer(nn.Module):
     # https://github.com/cure-lab/LTSF-Linear/blob/main/layers/Embed.py
     def __init__(self, c_in, d_model, kernel_size=3):
         super(EmbeddingLayer, self).__init__()
+        """
         padding = (kernel_size - 1)
         self.tokenConv = nn.Conv1d(in_channels=c_in,
                                    out_channels=d_model,
@@ -31,9 +32,14 @@ class EmbeddingLayer(nn.Module):
                                    bias=False
                                    )
         self.chomp1 = _Chomp1d(padding)
+        """
+        self.embedding = nn.Linear(
+            c_in, d_model, bias=False
+        )
 
     def forward(self, x_past: torch.Tensor):
-        return self.chomp1(self.tokenConv(x_past.permute(0, 2, 1))).transpose(1, 2)
+        #return self.chomp1(self.tokenConv(x_past.permute(0, 2, 1))).transpose(1, 2)
+        return self.embedding(x_past)
 
 
 class AbstractSearchEncoder(nn.Module):
@@ -214,6 +220,7 @@ class AbstractFlatEncoder(AbstractSearchEncoder):
     def __init__(self,
                  window_size: int,
                  forecasting_horizon: int,
+                 d_output: int,
                  n_cells: int,
                  n_nodes: int = 4,
                  n_cell_input_nodes: int = 1,
@@ -227,6 +234,8 @@ class AbstractFlatEncoder(AbstractSearchEncoder):
         self.n_cells_input_nodes = n_cell_input_nodes
         self.ops = PRIMITIVES
         self.OPS_kwargs = OPS_kwargs
+
+        self.d_output = d_output
 
         nn.Module.__init__(self)
         cells = []
@@ -285,6 +294,7 @@ class SearchDARTSFlatEncoder(AbstractFlatEncoder):
     def forward(self, x: torch.Tensor, w_dag: torch.Tensor, **kwargs):
         # we always transform the input multiple_series map into independent single series input
         batch_size = x.shape[0]
+        x = x[:, :, :self.d_model]
         # This result in a feature map of size [B*N, L, 1]
         past_targets = torch.transpose(x, -1, -2).flatten(0, 1)
         future_targets = torch.zeros([past_targets.shape[0], self.forecasting_horizon], device=past_targets.device,

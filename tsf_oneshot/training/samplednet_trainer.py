@@ -130,8 +130,6 @@ class SampledForecastingNetTrainer:
                                                                                        self.window_size,
                                                                                        self.lagged_values,
                                                                                        self.cached_lag_mask_encoder)
-        if self.model.only_require_targets:
-            return truncated_past_targets, None, (loc, scale)
 
         if past_features is not None:
             if self.window_size <= past_features.shape[1]:
@@ -216,7 +214,6 @@ class SampledForecastingNetTrainer:
             'MSE loss': mean_mse_loses,
             'MAE loss': mean_mae_losses
         }
-
 
     def evaluate_with_plot(self):
         for (test_X, test_y) in tqdm(self.test_loader):

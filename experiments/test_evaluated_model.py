@@ -1,4 +1,3 @@
-from tsf_oneshot.networks.sampled_net import SampledNet, SampledFlatNet
 import numpy as np
 import os
 from pathlib import Path
@@ -16,6 +15,8 @@ from datasets import get_LTSF_dataset, get_monash_dataset
 from datasets.get_data_loader import get_forecasting_dataset, get_dataloader, regenerate_splits
 
 from tsf_oneshot.training.samplednet_trainer import SampledForecastingNetTrainer
+from tsf_oneshot.networks.sampled_net import SampledNet, SampledFlatNet, ParallelMixedSampledNet, ConcatMixedSampledNet
+
 import torch.multiprocessing
 
 torch.multiprocessing.set_sharing_strategy('file_system')
@@ -30,6 +31,13 @@ def seed_everything(seed: int):
     # OTHERWISE Conv1D with dilation will be too slow?
     torch.backends.cudnn.deterministic = False
     torch.backends.cudnn.benchmark = True
+
+
+def get_optimized_archs(saved_data_info: dict[str, torch.Tensor], key: str):
+    archp = saved_data_info[key].cpu().argmax(-1).tolist()
+    has_edges = [True] * len(archp)
+
+    return archp, has_edges
 
 
 @hydra.main(config_path="configs", config_name="base.yaml")
@@ -67,14 +75,15 @@ def main(cfg: omegaconf.DictConfig):
                                                                  )
     elif dataset_type == 'LTSF':
         data_info, split_begin, split_end, (border1s, border2s) = get_LTSF_dataset.get_test_dataset(dataset_root_path,
-                                                                              dataset_name=dataset_name,
-                                                                              file_name=cfg.benchmark.file_name,
-                                                                              series_type=cfg.benchmark.series_type,
-                                                                              do_normalization=cfg.benchmark.do_normalization,
-                                                                              forecasting_horizon=cfg.benchmark.external_forecast_horizon,
-                                                                              make_dataset_uni_variant=cfg.benchmark.get(
-                                                                                  "make_dataset_uni_variant", False),
-                                                                              flag='test')
+                                                                                                    dataset_name=dataset_name,
+                                                                                                    file_name=cfg.benchmark.file_name,
+                                                                                                    series_type=cfg.benchmark.series_type,
+                                                                                                    do_normalization=cfg.benchmark.do_normalization,
+                                                                                                    forecasting_horizon=cfg.benchmark.external_forecast_horizon,
+                                                                                                    make_dataset_uni_variant=cfg.benchmark.get(
+                                                                                                        "make_dataset_uni_variant",
+                                                                                                        False),
+                                                                                                    flag='test')
     else:
         raise NotImplementedError
 
@@ -92,6 +101,7 @@ def main(cfg: omegaconf.DictConfig):
     """
 
     window_size = int(cfg.dataloader.window_size)
+    split = [np.arange(b1, b2 - dataset.n_prediction_steps) for b1, b2 in zip(border1s, border2s)]
 
     split = [
         np.arange(window_size - 1, border2s[0] - dataset.n_prediction_steps),
@@ -118,18 +128,12 @@ def main(cfg: omegaconf.DictConfig):
     # TODO check what data to pass
     saved_data_info = torch.load(out_path / 'Model' / 'model_weights.pth')
     if model_type == 'seq':
-        archp_encoder = saved_data_info['arch_p_encoder'].cpu()
-        archp_decoder = saved_data_info['arch_p_decoder'].cpu()
-        archp_head = saved_data_info['arch_p_heads'].cpu()
+        operations_encoder, has_edges_encoder = get_optimized_archs(saved_data_info, 'arch_p_encoder')
+        operations_decoder, has_edges_decoder = get_optimized_archs(saved_data_info, 'arch_p_decoder')
+        head_idx, _ = get_optimized_archs(saved_data_info, 'arch_p_heads')
         del saved_data_info
-        torch.cuda.empty_cache()
-        operations_encoder = archp_encoder.argmax(-1).tolist()
-        has_edges_encoder = [True] * len(operations_encoder)
 
-        operations_decoder = archp_decoder.argmax(-1).tolist()
-        has_edges_decoder = [True] * len(operations_decoder)
-
-        head_idx = archp_head.argmax(-1)[0].item()
+        head_idx = head_idx[0].item()
         HEAD = list(cfg.model.HEADS)[head_idx]
         net_init_kwargs = {
             'd_input_past': d_input_past,
@@ -157,13 +161,13 @@ def main(cfg: omegaconf.DictConfig):
         model = SampledNet(**net_init_kwargs)
 
     elif model_type == 'flat':
-        archp_encoder = saved_data_info['arch_p_encoder'].cpu()
-        archp_head = saved_data_info['arch_p_heads'].cpu()
+        operations_encoder, has_edges_encoder = get_optimized_archs(saved_data_info, 'arch_p_encoder')
+        head_idx, _ = get_optimized_archs(saved_data_info, 'arch_p_heads')
         del saved_data_info
         torch.cuda.empty_cache()
-        operations_encoder = archp_encoder.argmax(-1).tolist()
-        has_edges_encoder = [True] * len(operations_encoder)
-        head_idx = archp_head.argmax(-1)[0].item()
+
+        head_idx = head_idx[0].item()
+
         HEAD = list(cfg.model.HEADS)[head_idx]
 
         net_init_kwargs = {
@@ -180,6 +184,63 @@ def main(cfg: omegaconf.DictConfig):
             'HEADS_kwargs': {},
         }
         model = SampledFlatNet(**net_init_kwargs)
+    elif model_type.startswith('mixed'):
+        operations_encoder_seq, has_edges_encoder_seq = get_optimized_archs(saved_data_info, 'arch_p_encoder_seq')
+        operations_decoder_seq, has_edges_decoder_seq = get_optimized_archs(saved_data_info, 'arch_p_decoder_seq')
+        head_seq, _ = get_optimized_archs(saved_data_info, 'arch_p_heads')
+
+
+        operations_encoder_flat, has_edges_encoder_flat = get_optimized_archs(saved_data_info, 'arch_p_encoder_flat')
+        del saved_data_info
+        torch.cuda.empty_cache()
+        head_seq_idx = head_seq[0].item()
+
+        HEAD = list(cfg.model.seq_model.HEADS)[head_seq_idx]
+
+        if model_type == 'mixed_concat':
+            d_input_future = d_input_past
+        net_init_kwargs = dict(d_input_past=d_input_past,
+                               d_input_future=d_input_future,
+                               d_output=d_output,
+                               d_model=int(cfg.model.seq_model.d_model),
+                               n_cells_seq=int(cfg.model.seq_model.n_cells),
+                               n_nodes_seq=int(cfg.model.seq_model.n_nodes),
+                               n_cell_input_nodes_seq=int(cfg.model.seq_model.n_cell_input_nodes),
+                               operations_encoder_seq=operations_encoder_seq,
+                               has_edges_encoder_seq=has_edges_encoder_seq,
+                               operations_decoder_seq=operations_decoder_seq,
+                               has_edges_decoder_seq=has_edges_decoder_seq,
+                               PRIMITIVES_encoder_seq=list(cfg.model.seq_model.PRIMITIVES_encoder),
+                               PRIMITIVES_decoder_seq=list(cfg.model.seq_model.PRIMITIVES_decoder),
+
+                               OPS_kwargs_seq={
+                                   'mlp_mix': {
+                                       'forecasting_horizon': dataset.n_prediction_steps,
+                                       'window_size': window_size,
+                                   }
+                               },
+                               forecast_only_seq=True,
+
+                               window_size=window_size,
+                               forecasting_horizon=dataset.n_prediction_steps,
+                               n_cells_flat=int(cfg.model.flat_model.n_cells),
+                               n_nodes_flat=int(cfg.model.flat_model.n_nodes),
+                               n_cell_input_nodes_flat=int(cfg.model.flat_model.n_cell_input_nodes),
+                               operations_encoder_flat=operations_encoder_flat,
+                               has_edges_encoder_flat=has_edges_encoder_flat,
+                               PRIMITIVES_encoder_flat=list(cfg.model.flat_model.PRIMITIVES_encoder),
+                               OPS_kwargs_flat={},
+                               HEAD=HEAD,
+                               HEADS_kwargs_seq={},
+                               HEADS_kwargs_flat={},
+                               forecast_only_flat=True
+                               )
+        if model_type == 'mixed_concat':
+            net_init_kwargs.update({'d_input_future': d_input_future,
+                                    'forecast_only_flat': False})
+            model = ConcatMixedSampledNet(**net_init_kwargs)
+        elif model_type == 'mixed_parallel':
+            model = ParallelMixedSampledNet(**net_init_kwargs)
     else:
         raise NotImplementedError
 
@@ -225,6 +286,13 @@ def main(cfg: omegaconf.DictConfig):
             lr=cfg.w_optimizer.lr,
             momentum=cfg.w_optimizer.momentum,
         )
+    elif cfg.w_optimizer.type == 'adam':
+        w_optimizer = torch.optim.Adam(
+            params=w_optim_groups,
+            lr=cfg.w_optimizer.lr,
+            betas=(cfg.w_optimizer.beta1, cfg.w_optimizer.beta2),
+        )
+
     else:
         raise NotImplementedError
 

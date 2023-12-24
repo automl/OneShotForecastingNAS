@@ -129,6 +129,7 @@ class ForecastingDARTSFlatNetwork(nn.Module):
     def __init__(self,
                  window_size: int,
                  forecasting_horizon: int,
+                 d_output: int,
                  n_cells: int,
                  n_nodes: int,
                  n_cell_input_nodes: int,
@@ -150,9 +151,11 @@ class ForecastingDARTSFlatNetwork(nn.Module):
         self.HEADS = HEADS
         self.HEADS_kwargs = HEADS_kwargs
         self.forecast_only = forecast_only
+        self.d_output = d_output
 
         encoder_kwargs = dict(window_size=window_size,
                               forecasting_horizon=forecasting_horizon,
+                              d_output=d_output,
                               n_cells=n_cells,
                               n_nodes=n_nodes,
                               n_cell_input_nodes=n_cell_input_nodes,

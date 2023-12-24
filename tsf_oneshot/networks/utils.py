@@ -1,6 +1,20 @@
+import inspect
 import torch
 from torch import nn
 from torch.nn import functional as F
+
+
+def get_kwargs():
+    # https://stackoverflow.com/a/65927265
+    # get the values and arguments of the current function
+    frame = inspect.currentframe().f_back
+    keys, _, _, values = inspect.getargvalues(frame)
+    kwargs = {}
+    for key in keys:
+        if key != 'self':
+            kwargs[key] = values[key]
+    return kwargs
+
 
 # utils functions for DARTS and GDAS
 

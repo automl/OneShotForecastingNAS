@@ -2,10 +2,12 @@ import os
 import json
 from pathlib import Path
 from typing import Type
+import inspect
 
 import torch
 from torch import nn
 from tsf_oneshot.networks.components import EmbeddingLayer, AbstractSearchEncoder
+from tsf_oneshot.networks.utils import get_kwargs
 from tsf_oneshot.cells.cells import SampledEncoderCell, SampledDecoderCell, SampledFlatEncoderCell
 from tsf_oneshot.cells.ops import PRIMITIVES_Encoder
 from tsf_oneshot.prediction_heads import PREDICTION_HEADS, FLATPREDICTION_HEADS
@@ -164,7 +166,6 @@ class SampledNet(nn.Module):
         self.HEADS_kwargs = HEADS_kwargs
 
         self.forecast_only = forecast_only
-        self.only_require_targets = False
 
         encoder_kwargs = dict(d_input=d_input_past,
                               d_model=d_model,
@@ -306,6 +307,7 @@ class SampledFlatNet(SampledNet):
     def __init__(self,
                  window_size: int,
                  forecasting_horizon: int,
+                 d_output: int,
                  n_cells: int,
                  n_nodes: int,
                  n_cell_input_nodes: int,
@@ -327,6 +329,7 @@ class SampledFlatNet(SampledNet):
             HEAD=HEAD, HEADS_kwargs=HEADS_kwargs,
             forecast_only=forecast_only
         )
+        self.d_output = d_output
         self.forecasting_horizon = forecasting_horizon
         self.window_size = window_size
 
@@ -338,7 +341,6 @@ class SampledFlatNet(SampledNet):
         self.operations_encoder = operations_encoder
         self.has_edges_encoder = has_edges_encoder
         self.forecast_only = forecast_only
-        self.only_require_targets = True
 
         cells = []
         num_edges = None
@@ -373,6 +375,8 @@ class SampledFlatNet(SampledNet):
                 x_future: torch.Tensor):
         # we always transform the input multiple_series map into independent single series input
         batch_size = x_past.shape[0]
+        # we only take the past targets
+        x_past = x_past[:,:, :self.d_output]
         # This result in a feature map of size [B*N, L, 1]
         past_targets = torch.transpose(x_past, -1, -2).flatten(0, 1)
         future_targets = torch.zeros([past_targets.shape[0], self.forecasting_horizon], device=past_targets.device,
@@ -401,3 +405,140 @@ class SampledFlatNet(SampledNet):
         if (base_path / f'model_weights.pth').exists():
             model.load_state_dict(torch.load(base_path / f'model_weights.pth', map_location=device))
         return model
+
+
+class AbstractMixedSampledNet(SampledNet):
+    def __init__(self,
+                 d_input_past: int,
+                 d_input_future: int,
+                 d_output: int,
+
+                 d_model: int,
+                 n_cells_seq: int,
+                 n_nodes_seq: int,
+                 n_cell_input_nodes_seq: int,
+                 operations_encoder_seq: list[int],
+                 has_edges_encoder_seq: list[bool],
+                 operations_decoder_seq: list[int],
+                 has_edges_decoder_seq: list[bool],
+                 PRIMITIVES_encoder_seq: list[str],
+                 PRIMITIVES_decoder_seq: list[str],
+                 OPS_kwargs_seq: dict[str, dict],
+                 HEAD: str,
+                 HEADS_kwargs_seq: dict[str, dict],
+                 forecast_only_seq: bool,
+
+                 window_size: int,
+                 forecasting_horizon: int,
+                 n_cells_flat: int,
+                 n_nodes_flat: int,
+                 n_cell_input_nodes_flat: int,
+                 operations_encoder_flat: list[int],
+                 has_edges_encoder_flat: list[bool],
+                 PRIMITIVES_encoder_flat: list[str],
+                 OPS_kwargs_flat: dict[str, dict],
+                 HEADS_kwargs_flat: dict[str, dict],
+                 forecast_only_flat: bool = True
+
+                 ):
+        all_kwargs = get_kwargs()
+        self.validate_input_kwargs(**all_kwargs)
+
+        nn.Module.__init__(self)
+
+        self.meta_info = all_kwargs
+
+        # get arguments for the seq net
+        seq_net_kwargs = {}
+        for arg_name in inspect.signature(SampledNet.__init__).parameters:
+            if arg_name != 'self':
+                if arg_name in all_kwargs:
+                    seq_net_kwargs[arg_name] = all_kwargs[arg_name]
+                else:
+                    seq_net_kwargs[arg_name] = all_kwargs[f'{arg_name}_seq']
+
+        self.seq_net = SampledNet(**seq_net_kwargs)
+
+        # get arguments for the flat net
+        flat_net_kwargs = {}
+        for arg_name in inspect.signature(SampledFlatNet.__init__).parameters:
+            if arg_name != 'self':
+                if arg_name in all_kwargs:
+                    flat_net_kwargs[arg_name] = all_kwargs[arg_name]
+                else:
+                    flat_net_kwargs[arg_name] = all_kwargs[f'{arg_name}_flat']
+
+        self.flat_net = SampledFlatNet(**flat_net_kwargs)
+
+        # this function helps us to directly
+        self.d_output = d_output
+
+        # TODO check how to properly handle the heads
+        self.head = self.seq_net.head
+
+    def validate_input_kwargs(self, **kwargs):
+        return
+
+    @staticmethod
+    def add_outputs(input1: list, input2: list):
+        if isinstance(input1, list):
+            assert isinstance(input2, list)
+            assert len(input2) == len(input1)
+            res = [None for _ in range(len(input1))]
+            for i, (i1, i2) in enumerate(zip(input1, input2)):
+                res[i] = AbstractMixedSampledNet.add_outputs(i1, i2)
+        elif isinstance(input1, torch.Tensor):
+            assert isinstance(input2, torch.Tensor)
+            return input1 + input2
+
+    @staticmethod
+    def load(base_path: Path, device=torch.device('cpu'), model="SampledNet"):
+        raise NotImplementedError
+
+
+class ParallelMixedSampledNet(AbstractMixedSampledNet):
+    @staticmethod
+    def load(base_path: Path, device=torch.device('cpu'), model="SampledNet"):
+        if model is None:
+            with open(base_path / f'meta_info.json', 'r') as f:
+                meta_info = json.load(f)
+            model = ParallelMixedSampledNet(**meta_info)
+        if (base_path / f'model_weights.pth').exists():
+            model.load_state_dict(torch.load(base_path / f'model_weights.pth', map_location=device))
+        return model
+
+    def forward(self, x_past: torch.Tensor,
+                x_future: torch.Tensor):
+        flat_out = self.flat_net(x_past, x_future)
+        seq_out = self.seq_net(x_past, x_future)
+        return self.add_outputs(flat_out, seq_out)
+
+
+class ConcatMixedSampledNet(AbstractMixedSampledNet):
+    def validate_input_kwargs(self, **kwargs):
+        assert kwargs['forecast_only_flat'] is False
+        assert kwargs['d_input_future'] == kwargs['d_input_past']
+
+    @staticmethod
+    def load(base_path: Path, device=torch.device('cpu'), model="SampledNet"):
+        if model is None:
+            with open(base_path / f'meta_info.json', 'r') as f:
+                meta_info = json.load(f)
+            model = ParallelMixedSampledNet(**meta_info)
+        if (base_path / f'model_weights.pth').exists():
+            model.load_state_dict(torch.load(base_path / f'model_weights.pth', map_location=device))
+        return model
+
+    def forward(self, x_past: torch.Tensor,
+                x_future: torch.Tensor):
+        flat_out = self.flat_net(x_past, x_future)
+        backcast_flat_out, forecast_flat_out = flat_out
+        x_past[:,:, :self.d_output] = backcast_flat_out
+        x_future = torch.cat([forecast_flat_out, x_future], dim=-1)
+        seq_out = self.seq_net(x_past, x_future)
+        return seq_out
+
+
+
+
+

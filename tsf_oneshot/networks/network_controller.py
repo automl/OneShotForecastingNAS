@@ -67,8 +67,6 @@ class AbstractForecastingNetworkController(nn.Module):
         self.arch_p_decoder = nn.Parameter(1e-3 * torch.randn(self.net.decoder_n_edges, len(PRIMITIVES_decoder)))
         self.arch_p_heads = nn.Parameter(1e-3 * torch.randn(1, len(HEADS)))
 
-        self.only_require_targets: bool = False
-
         # setup alphas list
         self._arch_ps = []
         for n, p in self.named_parameters():
@@ -312,7 +310,6 @@ class AbstractForecastingFlatNetworkController(AbstractForecastingNetworkControl
         super(AbstractForecastingNetworkController, self).__init__()
         forecast_only = backcast_loss_ration == 0
 
-        self.only_require_targets = True
         self.net = self.net_type(window_size=window_size, forecasting_horizon=forecasting_horizon,
                                  OPS_kwargs=OPS_kwargs,
                                  n_cells=n_cells, n_nodes=n_nodes, n_cell_input_nodes=n_cell_input_nodes,
