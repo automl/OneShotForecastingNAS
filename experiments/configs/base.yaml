@@ -1,7 +1,7 @@
 seed: 0
 
 benchmark:
-  dataset_root: "/phys/ssd2/TSF_DATA"
+  dataset_root: "/home/deng/tmp/TSF_DATA/"
   type: ???
   name: ???
   file_name: ???
@@ -13,7 +13,7 @@ benchmark:
   metric: mean_MASE_forecasting
 
 dataloader:
-  batch_size: 24
+  batch_size: 4
   window_size: 96
   # window_size_coefficient: 1.25
   num_batches_per_epoch: 500
@@ -33,11 +33,11 @@ model:
   # PRIMITIVES_encoder: ['transformer']
   PRIMITIVES_decoder: [ 'mlp_mix', 'gru','transformer', 'tcn', 'skip_connection' ]
   #  PRIMITIVES_decoder: ['lstm']
-  HEADS: ['quantile', 'mse', 'mae']
+  HEADs: ['quantile', 'mse', 'mae']
 
 val_share: 0.5
 
-model_dir: /phys/ssd2/TSF_OneShot
+model_dir: /home/deng/tmp/TSF_OneShot/
 
 train:
   n_epochs: 150
@@ -63,7 +63,7 @@ lr_scheduler_type: 'CosineAnnealingWarmRestarts'
 lr_scheduler:
   T_0: 30
   T_mult: 1
-  eta_min: 1e-3
+  eta_min: 1e-6
 
 wandb:
   name: ${model.type}_${model.model_type}_${model.grad_order}
@@ -71,4 +71,3 @@ wandb:
   project: OneShotForecasting
   entity: ddeng
   mode: disabled
-

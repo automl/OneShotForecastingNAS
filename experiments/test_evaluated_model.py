@@ -15,7 +15,7 @@ from datasets import get_LTSF_dataset, get_monash_dataset
 from datasets.get_data_loader import get_forecasting_dataset, get_dataloader, regenerate_splits
 
 from tsf_oneshot.training.samplednet_trainer import SampledForecastingNetTrainer
-from tsf_oneshot.networks.sampled_net import SampledNet, SampledFlatNet, ParallelMixedSampledNet, ConcatMixedSampledNet
+from tsf_oneshot.networks.sampled_net import SampledNet, SampledFlatNet, MixedParallelSampledNet, MixedConcatSampledNet
 
 import torch.multiprocessing
 
@@ -28,7 +28,7 @@ def seed_everything(seed: int):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
-    # OTHERWISE Conv1D with dilation will be too slow?
+    # Otherwise, Conv1D with dilation will be too slow?
     torch.backends.cudnn.deterministic = False
     torch.backends.cudnn.benchmark = True
 
@@ -134,7 +134,7 @@ def main(cfg: omegaconf.DictConfig):
         del saved_data_info
 
         head_idx = head_idx[0].item()
-        HEAD = list(cfg.model.HEADS)[head_idx]
+        HEAD = list(cfg.model.HEADs)[head_idx]
         net_init_kwargs = {
             'd_input_past': d_input_past,
             'OPS_kwargs': {
@@ -156,7 +156,7 @@ def main(cfg: omegaconf.DictConfig):
             'PRIMITIVES_encoder': list(cfg.model.PRIMITIVES_encoder),
             'PRIMITIVES_decoder': list(cfg.model.PRIMITIVES_decoder),
             'HEAD': HEAD,
-            'HEADS_kwargs': {},
+            'HEADs_kwargs': {},
         }
         model = SampledNet(**net_init_kwargs)
 
@@ -167,22 +167,23 @@ def main(cfg: omegaconf.DictConfig):
         torch.cuda.empty_cache()
 
         head_idx = head_idx[0].item()
+        HEAD = list(cfg.model.HEADs)[head_idx]
 
-        HEAD = list(cfg.model.HEADS)[head_idx]
-
-        net_init_kwargs = {
-            'window_size': window_size,
-            'forecasting_horizon': dataset.n_prediction_steps,
-            'OPS_kwargs': {},
-            'n_cells': int(cfg.model.n_cells) * 2,
-            'n_nodes': int(cfg.model.n_nodes),
-            'operations_encoder': operations_encoder,
-            'has_edges_encoder': has_edges_encoder,
-            'n_cell_input_nodes': int(cfg.model.n_cell_input_nodes),
-            'PRIMITIVES_encoder': list(cfg.model.PRIMITIVES_encoder),
-            'HEAD': HEAD,
-            'HEADS_kwargs': {},
-        }
+        net_init_kwargs = dict(
+            window_size=window_size,
+            forecasting_horizon=dataset.n_prediction_steps,
+            d_output=d_output,
+            OPS_kwargs={},
+            n_cells=int(cfg.model.n_cells) * 2,
+            n_nodes=int(cfg.model.n_nodes),
+            operations_encoder=operations_encoder,
+            has_edges_encoder=has_edges_encoder,
+            n_cell_input_nodes=int(cfg.model.n_cell_input_nodes),
+            PRIMITIVES_encoder=list(cfg.model.PRIMITIVES_encoder),
+            HEAD=HEAD,
+            HEADs_kwargs={},
+            backcast_loss_ration=float(cfg.model.get('backcast_loss_ration', 0.0))
+        )
         model = SampledFlatNet(**net_init_kwargs)
     elif model_type.startswith('mixed'):
         operations_encoder_seq, has_edges_encoder_seq = get_optimized_archs(saved_data_info, 'arch_p_encoder_seq')
@@ -195,8 +196,7 @@ def main(cfg: omegaconf.DictConfig):
         torch.cuda.empty_cache()
         head_seq_idx = head_seq[0].item()
 
-        HEAD = list(cfg.model.seq_model.HEADS)[head_seq_idx]
-
+        HEAD = list(cfg.model.seq_model.HEADs)[head_seq_idx]
         if model_type == 'mixed_concat':
             d_input_future = d_input_past
         net_init_kwargs = dict(d_input_past=d_input_past,
@@ -219,7 +219,7 @@ def main(cfg: omegaconf.DictConfig):
                                        'window_size': window_size,
                                    }
                                },
-                               forecast_only_seq=True,
+                               backcast_loss_ration_seq=float(cfg.model.seq_model.get('backcast_loss_ration', 0.0)),
 
                                window_size=window_size,
                                forecasting_horizon=dataset.n_prediction_steps,
@@ -231,46 +231,16 @@ def main(cfg: omegaconf.DictConfig):
                                PRIMITIVES_encoder_flat=list(cfg.model.flat_model.PRIMITIVES_encoder),
                                OPS_kwargs_flat={},
                                HEAD=HEAD,
-                               HEADS_kwargs_seq={},
-                               HEADS_kwargs_flat={},
-                               forecast_only_flat=True
+                               HEADs_kwargs_seq={},
+                               HEADs_kwargs_flat={},
+                               backcast_loss_ration_flat=float(cfg.model.flat_model.get('backcast_loss_ration', 0.0)),
                                )
         if model_type == 'mixed_concat':
-            net_init_kwargs.update({'d_input_future': d_input_future,
-                                    'forecast_only_flat': False})
-            model = ConcatMixedSampledNet(**net_init_kwargs)
+            model = MixedConcatSampledNet(**net_init_kwargs)
         elif model_type == 'mixed_parallel':
-            model = ParallelMixedSampledNet(**net_init_kwargs)
+            model = MixedParallelSampledNet(**net_init_kwargs)
     else:
         raise NotImplementedError
-
-    """
-    net_init_kwargs = {
-        'd_input_past': d_input_past,
-        'OPS_kwargs': {
-            'mlp_mix': {
-                'forecasting_horizon': dataset.n_prediction_steps,
-                'window_size': window_size,
-            }
-        },
-        'd_input_future': d_input_future,
-        'd_model': int(cfg.model.d_model),
-        'd_output': d_output,
-        'n_cells': int(cfg.model.n_cells),
-        'n_nodes': int(cfg.model.n_nodes),
-        'operations_encoder': operations_encoder,
-        'has_edges_encoder': has_edges_encoder,
-        'operations_decoder': operations_decoder,
-        'has_edges_decoder': has_edges_decoder,
-        'n_cell_input_nodes': int(cfg.model.n_cell_input_nodes),
-        'PRIMITIVES_encoder': list(cfg.model.PRIMITIVES_encoder),
-        'PRIMITIVES_decoder': list(cfg.model.PRIMITIVES_decoder),
-        'HEAD': HEAD,
-        'HEADS_kwargs': {},
-    }
-    """
-
-    # model = SampledNet(**net_init_kwargs)
 
     w_optim_groups = model.get_weight_optimizer_parameters(cfg.w_optimizer.weight_decay)
 

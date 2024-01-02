@@ -35,6 +35,9 @@ class MLPFlatModule(nn.Module):
         # here x_past should be the concatenation of x_past + x_future
         return torch.cat([x_past[:, :self.window_size], self.net(x_past)], -1)
 
+    def forward(self, x_past: torch.Tensor, **kwargs):
+        # here x_past should be the concatenation of x_past + x_future
+        return torch.cat([x_past[:, :self.window_size], self.net(x_past)], -1)
 
 class NBEATSModule(nn.Module):
     def __init__(self, window_size: int,

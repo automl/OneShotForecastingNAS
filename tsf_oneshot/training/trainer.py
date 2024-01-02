@@ -198,9 +198,9 @@ class ForecastingTrainer:
 
         for (train_X, train_y), (val_X, val_y) in tzip(self.train_loader, self.val_loader):
             # update model weights
-
             torch.cuda.empty_cache()
             w_loss, _ = self.update_weights(train_X, train_y)
+
             torch.cuda.empty_cache()
             self.update_alphas(val_X, val_y)
 
@@ -228,8 +228,6 @@ class ForecastingTrainer:
     def update_weights(self, train_X, train_y):
         x_past_train, x_future_train, scale_value_train = self.preprocessing(train_X)
         target_train = train_y['future_targets'].float().to(self.device)
-
-        self.w_optimizer.zero_grad()
 
         with torch.cuda.amp.autocast(enabled=self.amp_enable):
             prediction_train, w_dag_train = self.model(x_past_train, x_future_train, return_w_head=True)
@@ -283,13 +281,15 @@ class ForecastingTrainer:
             wandb.log({'gradient_norm_weights': gradient_norm})
         self.scaler.step(self.w_optimizer)
         self.scaler.update()
+
+        self.w_optimizer.zero_grad()
+
         return w_loss, prediction
 
     def update_alphas(self, val_X, val_y):
         x_past_val, x_future_val, scale_value_val = self.preprocessing(val_X)
         target_val = val_y['future_targets'].float().to(self.device)
 
-        self.a_optimizer.zero_grad()
         with torch.cuda.amp.autocast(enabled=self.amp_enable):
 
             prediction_val, w_dag_val = self.model(x_past_val, x_future_val, return_w_head=True)
@@ -326,6 +326,8 @@ class ForecastingTrainer:
 
         self.scaler.step(self.a_optimizer)
         self.scaler.update()
+        self.a_optimizer.zero_grad()
+
         return a_loss, prediction
 
     def save(self, save_path: Path, epoch: int):

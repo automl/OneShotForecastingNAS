@@ -294,7 +294,7 @@ class SearchDARTSFlatEncoder(AbstractFlatEncoder):
     def forward(self, x: torch.Tensor, w_dag: torch.Tensor, **kwargs):
         # we always transform the input multiple_series map into independent single series input
         batch_size = x.shape[0]
-        x = x[:, :, :self.d_model]
+        x = x[:, :, :self.d_output]
         # This result in a feature map of size [B*N, L, 1]
         past_targets = torch.transpose(x, -1, -2).flatten(0, 1)
         future_targets = torch.zeros([past_targets.shape[0], self.forecasting_horizon], device=past_targets.device,

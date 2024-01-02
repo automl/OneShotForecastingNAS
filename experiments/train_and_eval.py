@@ -18,6 +18,10 @@ from tsf_oneshot.networks.network_controller import (
     ForecastingDARTSNetworkController,
     ForecastingDARTSFlatNetworkController,
     ForecastingGDASFlatNetworkController,
+    ForecastingDARTSMixedParallelNetController,
+    ForecastingGDASMixedParallelNetController,
+    ForecastingDARTSMixedConcatNetController,
+    ForecastingGDASMixedConcatNetController,
 )
 
 from tsf_oneshot.training.trainer import ForecastingTrainer, ForecastingDARTSSecondOrderTrainer
@@ -29,7 +33,7 @@ def seed_everything(seed: int):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
-    # OTHERWISE Conv1D with dilation will be too slow?
+    # Otherwise, Conv1D with dilation will be too slow?
     torch.backends.cudnn.deterministic = False
     torch.backends.cudnn.benchmark = True
 
@@ -110,13 +114,13 @@ def main(cfg: omegaconf.DictConfig):
     d_input_future = n_time_features
     d_output = dataset.num_targets
 
-    net_init_kwargs = {
-        'n_cells': int(cfg.model.n_cells),
-        'n_nodes': int(cfg.model.n_nodes),
-        'n_cell_input_nodes': int(cfg.model.n_cell_input_nodes),
-        'backcast_loss_ration': float(cfg.model.get('backcast_loss_ration', 0.0))
-    }
     if model_type == 'seq':
+        net_init_kwargs = {
+            'n_cells': int(cfg.model.n_cells),
+            'n_nodes': int(cfg.model.n_nodes),
+            'n_cell_input_nodes': int(cfg.model.n_cell_input_nodes),
+            'backcast_loss_ration': float(cfg.model.get('backcast_loss_ration', 0.0))
+        }
         net_init_kwargs.update(
             {'d_input_past': d_input_past,
              'OPS_kwargs': {
@@ -130,19 +134,63 @@ def main(cfg: omegaconf.DictConfig):
              'd_output': d_output,
              'PRIMITIVES_encoder': list(cfg.model.PRIMITIVES_encoder),
              'PRIMITIVES_decoder': list(cfg.model.PRIMITIVES_decoder),
-             'HEADS': list(cfg.model.HEADS)
+             'HEADs': list(cfg.model.HEADs)
              }
         )
     elif model_type == 'flat':
+        net_init_kwargs = {
+            'n_cells': int(cfg.model.n_cells),
+            'n_nodes': int(cfg.model.n_nodes),
+            'n_cell_input_nodes': int(cfg.model.n_cell_input_nodes),
+            'backcast_loss_ration': float(cfg.model.get('backcast_loss_ration', 0.0))
+        }
         net_init_kwargs.update(
             {'window_size': window_size,
              'forecasting_horizon': dataset.n_prediction_steps,
              'PRIMITIVES_encoder': list(cfg.model.PRIMITIVES_encoder),
-             'HEADS': list(cfg.model.HEADS),
+             'HEADs': list(cfg.model.HEADs),
              'OPS_kwargs': {},
-             'HEADS_kwargs': {}
+             'HEADs_kwargs': {}
              }
         )
+    elif model_type.startswith('mixed'):
+        if model_type == 'mixed_concat':
+            d_input_future = d_input_past
+
+        net_init_kwargs = {
+            'd_input_past': d_input_past,
+            'd_input_future': d_input_future,
+            'd_model': int(cfg.model.seq_model.d_model),
+            'd_output': d_output,
+            'n_cells_seq': int(cfg.model.seq_model.n_cells),
+            'n_nodes_seq': int(cfg.model.seq_model.n_nodes),
+            'n_cell_input_nodes_seq': int(cfg.model.seq_model.n_cell_input_nodes),
+            'backcast_loss_ration_seq': float(cfg.model.seq_model.get('backcast_loss_ration', 0.0)),
+
+            'PRIMITIVES_encoder_seq': list(cfg.model.seq_model.PRIMITIVES_encoder),
+            'PRIMITIVES_decoder_seq': list(cfg.model.seq_model.PRIMITIVES_decoder),
+            'OPS_kwargs_seq': {
+                'mlp_mix': {
+                    'forecasting_horizon': dataset.n_prediction_steps,
+                    'window_size': window_size,
+                }
+            },
+
+            'window_size': window_size,
+            'forecasting_horizon': dataset.n_prediction_steps,
+            'n_cells_flat': int(cfg.model.flat_model.n_cells),
+            'n_nodes_flat': int(cfg.model.flat_model.n_nodes),
+            'n_cell_input_nodes_flat': int(cfg.model.flat_model.n_cell_input_nodes),
+            'backcast_loss_ration_flat': float(cfg.model.flat_model.get('backcast_loss_ration', 0.0)),
+
+            'PRIMITIVES_encoder_flat': list(cfg.model.flat_model.PRIMITIVES_encoder),
+
+            'OPS_kwargs_flat': {},
+
+            'HEADs': list(cfg.model.HEADs),
+            'HEADs_kwargs_seq': {},
+            'HEADs_kwargs_flat': {},
+        }
     else:
         raise NotImplementedError("Unknown model_class ")
 
@@ -172,8 +220,32 @@ def main(cfg: omegaconf.DictConfig):
             model = ForecastingGDASFlatNetworkController(**net_init_kwargs)
         else:
             raise NotImplementedError
+    elif model_type == 'mixed_parallel':
+        if search_type == 'darts':
+            model = ForecastingDARTSMixedParallelNetController(
+                **net_init_kwargs
+            )
+            if grad_order == 2:
+                architect = Architect(net=model, w_momentum=cfg.w_optimizer.beta1,
+                                      w_weight_decay=cfg.w_optimizer.weight_decay)
+        elif search_type == 'gdas':
+            model = ForecastingGDASMixedParallelNetController(**net_init_kwargs)
+        else:
+            raise NotImplementedError
+    elif model_type == 'mixed_concat':
+        if search_type == 'darts':
+            model = ForecastingDARTSMixedConcatNetController(
+                **net_init_kwargs
+            )
+            if grad_order == 2:
+                architect = Architect(net=model, w_momentum=cfg.w_optimizer.beta1,
+                                      w_weight_decay=cfg.w_optimizer.weight_decay)
+        elif search_type == 'gdas':
+            model = ForecastingGDASMixedConcatNetController(**net_init_kwargs)
+        else:
+            raise NotImplementedError
     else:
-        raise NotImplementedError
+        raise NotImplementedError(f'Unknown model_type {model_type}')
 
     optim_groups = model.get_weight_optimizer_parameters(cfg.w_optimizer.weight_decay)
 

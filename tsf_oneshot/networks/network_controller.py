@@ -1,3 +1,4 @@
+import copy
 import os
 import json
 
@@ -7,9 +8,17 @@ from torch import nn
 
 from pathlib import Path
 from tsf_oneshot.networks.networks import (
-    ForecastingDARTSNetwork, ForecastingGDASNetwork, ForecastingDARTSFlatNetwork, ForecastingGDASFlatNetwork
+    ForecastingDARTSNetwork,
+    ForecastingGDASNetwork,
+    ForecastingDARTSFlatNetwork,
+    ForecastingGDASFlatNetwork,
+    ForecastingAbstractMixedNet,
+    ForecastingDARTSMixedConcatNet,
+    ForecastingGDASMixedConcatNet,
+    ForecastingDARTSMixedParallelNet,
+    ForecastingGDASMixedParallelNet
 )
-from tsf_oneshot.networks.components import EmbeddingLayer
+from tsf_oneshot.networks.combined_net_utils import get_kwargs
 from tsf_oneshot.networks.utils import (
     apply_normalizer,
     get_normalizer,
@@ -30,8 +39,8 @@ class AbstractForecastingNetworkController(nn.Module):
                  n_cell_input_nodes: int,
                  PRIMITIVES_encoder: list[str],
                  PRIMITIVES_decoder: list[str],
-                 HEADS: list[str],
-                 HEADS_kwargs: dict[str, dict] = {},
+                 HEADs: list[str],
+                 HEADs_kwargs: dict[str, dict] = {},
                  OPS_kwargs: dict[str, dict] = {},
                  val_loss_criterion: str = 'mse',
                  backcast_loss_ration: float = 0.0
@@ -44,7 +53,7 @@ class AbstractForecastingNetworkController(nn.Module):
             n_cells=n_cells, n_nodes=n_nodes, n_cell_input_nodes=n_cell_input_nodes,
             PRIMITIVES_encoder=PRIMITIVES_encoder,
             PRIMITIVES_decoder=PRIMITIVES_decoder,
-            HEADS=HEADS, HEADS_kwargs=HEADS_kwargs,
+            HEADs=HEADs, HEADs_kwargs=HEADs_kwargs,
             val_loss_criterion=val_loss_criterion,
             backcast_loss_ration=backcast_loss_ration
         )
@@ -60,12 +69,12 @@ class AbstractForecastingNetworkController(nn.Module):
                                  n_cells=n_cells, n_nodes=n_nodes, n_cell_input_nodes=n_cell_input_nodes,
                                  PRIMITIVES_encoder=PRIMITIVES_encoder,
                                  PRIMITIVES_decoder=PRIMITIVES_decoder,
-                                 HEADS=HEADS, HEADS_kwargs=HEADS_kwargs,
+                                 HEADs=HEADs, HEADs_kwargs=HEADs_kwargs,
                                  forecast_only=forecast_only)
 
         self.arch_p_encoder = nn.Parameter(1e-3 * torch.randn(self.net.encoder_n_edges, len(PRIMITIVES_encoder)))
         self.arch_p_decoder = nn.Parameter(1e-3 * torch.randn(self.net.decoder_n_edges, len(PRIMITIVES_decoder)))
-        self.arch_p_heads = nn.Parameter(1e-3 * torch.randn(1, len(HEADS)))
+        self.arch_p_heads = nn.Parameter(1e-3 * torch.randn(1, len(HEADs)))
 
         # setup alphas list
         self._arch_ps = []
@@ -230,8 +239,8 @@ class ForecastingDARTSNetworkController(AbstractForecastingNetworkController):
                  n_cell_input_nodes: int,
                  PRIMITIVES_encoder: list[str],
                  PRIMITIVES_decoder: list[str],
-                 HEADS: list[str],
-                 HEADS_kwargs: dict[str, dict] = {},
+                 HEADs: list[str],
+                 HEADs_kwargs: dict[str, dict] = {},
                  normalizer: dict = {},
                  OPS_kwargs: dict[str, dict] = {},
                  val_loss_criterion: str = 'mse',
@@ -245,8 +254,8 @@ class ForecastingDARTSNetworkController(AbstractForecastingNetworkController):
                                                                 n_cell_input_nodes=n_cell_input_nodes,
                                                                 PRIMITIVES_encoder=PRIMITIVES_encoder,
                                                                 PRIMITIVES_decoder=PRIMITIVES_decoder,
-                                                                HEADS=HEADS,
-                                                                HEADS_kwargs=HEADS_kwargs,
+                                                                HEADs=HEADs,
+                                                                HEADs_kwargs=HEADs_kwargs,
                                                                 val_loss_criterion=val_loss_criterion,
                                                                 backcast_loss_ration=backcast_loss_ration)
         self.normalizer = get_normalizer(normalizer)
@@ -292,8 +301,8 @@ class AbstractForecastingFlatNetworkController(AbstractForecastingNetworkControl
                  n_nodes: int,
                  n_cell_input_nodes: int,
                  PRIMITIVES_encoder: list[str],
-                 HEADS: list[str],
-                 HEADS_kwargs,
+                 HEADs: list[str],
+                 HEADs_kwargs,
                  OPS_kwargs: dict[str, dict] = {},
                  val_loss_criterion: str = 'mse',
                  backcast_loss_ration: float = 0.0,
@@ -303,7 +312,7 @@ class AbstractForecastingFlatNetworkController(AbstractForecastingNetworkControl
             OPS_kwargs=OPS_kwargs,
             n_cells=n_cells, n_nodes=n_nodes, n_cell_input_nodes=n_cell_input_nodes,
             PRIMITIVES_encoder=PRIMITIVES_encoder,
-            HEADS=HEADS, HEADS_kwargs=HEADS_kwargs,
+            HEADs=HEADs, HEADs_kwargs=HEADs_kwargs,
             val_loss_criterion=val_loss_criterion,
             backcast_loss_ration=backcast_loss_ration
         )
@@ -314,11 +323,11 @@ class AbstractForecastingFlatNetworkController(AbstractForecastingNetworkControl
                                  OPS_kwargs=OPS_kwargs,
                                  n_cells=n_cells, n_nodes=n_nodes, n_cell_input_nodes=n_cell_input_nodes,
                                  PRIMITIVES_encoder=PRIMITIVES_encoder,
-                                 HEADS=HEADS, HEADS_kwargs=HEADS_kwargs,
+                                 HEADs=HEADs, HEADs_kwargs=HEADs_kwargs,
                                  forecast_only=forecast_only)
 
         self.arch_p_encoder = nn.Parameter(1e-3 * torch.randn(self.net.encoder_n_edges, len(PRIMITIVES_encoder)))
-        self.arch_p_heads = nn.Parameter(1e-3 * torch.randn(1, len(HEADS)))
+        self.arch_p_heads = nn.Parameter(1e-3 * torch.randn(1, len(HEADs)))
 
         # setup alphas list
         self._arch_ps = []
@@ -354,20 +363,21 @@ class ForecastingDARTSFlatNetworkController(AbstractForecastingFlatNetworkContro
                  n_nodes: int,
                  n_cell_input_nodes: int,
                  PRIMITIVES_encoder: list[str],
-                 HEADS: list[str],
-                 HEADS_kwargs,
+                 HEADs: list[str],
+                 HEADs_kwargs,
                  OPS_kwargs: dict[str, dict] = {},
                  normalizer={},
                  backcast_loss_ration: float = 0.0,
                  ):
-        AbstractForecastingFlatNetworkController.__init__(self, window_size=window_size,
+        AbstractForecastingFlatNetworkController.__init__(self,
+                                                          window_size=window_size,
                                                           forecasting_horizon=forecasting_horizon,
                                                           n_cells=n_cells, n_nodes=n_nodes,
                                                           n_cell_input_nodes=n_cell_input_nodes,
                                                           PRIMITIVES_encoder=PRIMITIVES_encoder,
-                                                          HEADS=HEADS,
+                                                          HEADs=HEADs,
                                                           OPS_kwargs=OPS_kwargs,
-                                                          HEADS_kwargs=HEADS_kwargs,
+                                                          HEADs_kwargs=HEADs_kwargs,
                                                           backcast_loss_ration=backcast_loss_ration)
         self.normalizer = get_normalizer(normalizer)
 
@@ -442,5 +452,221 @@ class ForecastingGDASFlatNetworkController(AbstractForecastingFlatNetworkControl
             with open(base_path / f'meta_info.json', 'r') as f:
                 meta_info = json.load(f)
             model = ForecastingGDASNetworkController(**meta_info)
+        model.load_state_dict(torch.load(base_path / f'model_weights.pth', map_location=device))
+        return model
+
+
+class ForecastingAbstractMixedNetController(AbstractForecastingNetworkController):
+    net_type = ForecastingAbstractMixedNet
+
+    def __init__(self,
+                 d_input_past: int,
+                 d_input_future: int,
+                 d_output: int,
+
+                 d_model: int,
+                 n_cells_seq: int,
+                 n_nodes_seq: int,
+                 n_cell_input_nodes_seq: int,
+                 PRIMITIVES_encoder_seq: list[str],
+                 PRIMITIVES_decoder_seq: list[str],
+                 OPS_kwargs_seq: dict[str, dict],
+
+                 window_size: int,
+                 forecasting_horizon: int,
+                 n_cells_flat: int,
+                 n_nodes_flat: int,
+                 n_cell_input_nodes_flat: int,
+                 PRIMITIVES_encoder_flat: list[str],
+                 OPS_kwargs_flat: dict[str, dict],
+
+                 HEADs: list[str],
+                 HEADs_kwargs_seq: dict[str, dict],
+                 HEADs_kwargs_flat: dict[str, dict],
+
+                 backcast_loss_ration_seq: float = 0.0,
+                 backcast_loss_ration_flat: float = 0.0,
+                 val_loss_criterion: str = 'mse'
+                 ):
+        all_kwargs = get_kwargs()
+        self.meta_info = copy.copy(all_kwargs)
+
+        self.validate_input_kwargs(all_kwargs)
+
+        nn.Module.__init__(self)
+
+
+        forecast_only_seq = backcast_loss_ration_seq == 0
+        forecast_only_flat = backcast_loss_ration_flat == 0
+
+        self.forecast_only = forecast_only_seq or forecast_only_flat
+
+        self.backcast_loss_ration = max(backcast_loss_ration_seq, backcast_loss_ration_flat)
+
+        self.net = self.net_type(**all_kwargs)
+        self.heads = self.net.heads
+
+        self.arch_p_encoder_seq = nn.Parameter(
+            1e-3 * torch.randn(self.net.seq_net.encoder_n_edges, len(PRIMITIVES_encoder_seq))
+        )
+        self.arch_p_decoder_seq = nn.Parameter(
+            1e-3 * torch.randn(self.net.seq_net.decoder_n_edges, len(PRIMITIVES_decoder_seq))
+        )
+
+        self.arch_p_encoder_flat = nn.Parameter(
+            1e-3 * torch.randn(self.net.flat_net.encoder_n_edges, len(PRIMITIVES_encoder_flat))
+        )
+        self.arch_p_heads = nn.Parameter(1e-3 * torch.randn(1, len(HEADs)))
+
+        # setup alphas list
+        self._arch_ps = []
+        for n, p in self.named_parameters():
+            if "arch_p" in n:
+                self._arch_ps.append((n, p))
+
+        self.val_loss_criterion = val_loss_criterion
+        if val_loss_criterion == 'mse':
+            self.criterion = nn.MSELoss()
+        elif val_loss_criterion == 'mae':
+            self.criterion = nn.L1Loss()
+        else:
+            raise NotImplementedError
+
+    def validate_input_kwargs(self, kwargs):
+        backcast_loss_ration_seq = kwargs.pop('backcast_loss_ration_seq')
+        backcast_loss_ration_flat = kwargs.pop('backcast_loss_ration_flat')
+        # we need to ensure that the backcast loss ration of the two parts either consistent or
+        assert backcast_loss_ration_flat == backcast_loss_ration_seq or \
+               (backcast_loss_ration_flat * backcast_loss_ration_seq) == 0
+        forecast_only_seq = backcast_loss_ration_seq == 0
+        forecast_only_flat = backcast_loss_ration_flat == 0
+        # update kwargs to fit the requirements of net_init function
+        kwargs.pop('val_loss_criterion')
+        kwargs['forecast_only_seq'] = forecast_only_seq
+        kwargs['forecast_only_flat'] = forecast_only_flat
+        return kwargs
+
+
+    def get_all_wags(self):
+        w_dag_encoder_seq = self.get_w_dag(self.arch_p_encoder_seq)
+        w_dag_decoder_seq = self.get_w_dag(self.arch_p_decoder_seq)
+
+        w_dag_encoder_flat = self.get_w_dag(self.arch_p_encoder_flat)
+
+        w_dag_head = self.get_w_dag(self.arch_p_heads)
+
+        return dict(
+            arch_p_encoder_seq=w_dag_encoder_seq,
+            arch_p_decoder_seq=w_dag_decoder_seq,
+            arch_p_heads_seq=w_dag_head,
+
+            arch_p_encoder_flat=w_dag_encoder_flat,
+            arch_p_heads_flat=w_dag_head
+        )
+
+    def forward(self, x_past: torch.Tensor, x_future: torch.Tensor, return_w_head: bool = False):
+        all_wags = self.get_all_wags()
+        prediction = self.net(x_past=x_past, x_future=x_future, **all_wags)
+
+        if return_w_head:
+            return prediction, all_wags['arch_p_heads_seq']
+        return prediction
+
+
+class ForecastingDARTSMixedParallelNetController(ForecastingAbstractMixedNetController,
+                                                 ForecastingDARTSNetworkController):
+    net_type = ForecastingDARTSMixedParallelNet
+
+    def __init__(self,
+                 d_input_past: int,
+                 d_input_future: int,
+                 d_output: int,
+
+                 d_model: int,
+                 n_cells_seq: int,
+                 n_nodes_seq: int,
+                 n_cell_input_nodes_seq: int,
+                 PRIMITIVES_encoder_seq: list[str],
+                 PRIMITIVES_decoder_seq: list[str],
+                 OPS_kwargs_seq: dict[str, dict],
+
+                 window_size: int,
+                 forecasting_horizon: int,
+                 n_cells_flat: int,
+                 n_nodes_flat: int,
+                 n_cell_input_nodes_flat: int,
+                 PRIMITIVES_encoder_flat: list[str],
+                 OPS_kwargs_flat: dict[str, dict],
+
+                 HEADs: list[str],
+                 HEADs_kwargs_seq: dict[str, dict],
+                 HEADs_kwargs_flat: dict[str, dict],
+
+                 backcast_loss_ration_seq: float = 0.0,
+                 backcast_loss_ration_flat: float = 0.0,
+                 val_loss_criterion: str = 'mse',
+
+                 normalizer: dict = {}):
+        all_kwargs = get_kwargs()
+        all_kwargs.pop('normalizer')
+        ForecastingAbstractMixedNetController.__init__(self, **all_kwargs)
+        self.normalizer = get_normalizer(normalizer)
+
+    @staticmethod
+    def load(base_path: Path,
+             device=torch.device('cpu'),
+             model: Optional["ForecastingDARTSMixedParallelNetController"] = None):
+        if model is None:
+            with open(base_path / f'meta_info.json', 'r') as f:
+                meta_info = json.load(f)
+            model = ForecastingDARTSMixedParallelNetController(**meta_info)
+        model.load_state_dict(torch.load(base_path / f'model_weights.pth', map_location=device))
+        return model
+
+
+class ForecastingDARTSMixedConcatNetController(ForecastingDARTSMixedParallelNetController,
+                                               ForecastingDARTSNetworkController):
+    net_type = ForecastingDARTSMixedConcatNet
+
+    @staticmethod
+    def load(base_path: Path,
+             device=torch.device('cpu'),
+             model: Optional["ForecastingDARTSMixedConcatNetController"] = None):
+        if model is None:
+            with open(base_path / f'meta_info.json', 'r') as f:
+                meta_info = json.load(f)
+            model = ForecastingDARTSMixedConcatNetController(**meta_info)
+        model.load_state_dict(torch.load(base_path / f'model_weights.pth', map_location=device))
+        return model
+
+
+class ForecastingGDASMixedParallelNetController(ForecastingAbstractMixedNetController,
+                                                ForecastingGDASNetworkController):
+    net_type = ForecastingGDASMixedParallelNet
+
+    @staticmethod
+    def load(base_path: Path,
+             device=torch.device('cpu'),
+             model: Optional["ForecastingGDASMixedParallelNetController"] = None):
+        if model is None:
+            with open(base_path / f'meta_info.json', 'r') as f:
+                meta_info = json.load(f)
+            model = ForecastingGDASMixedParallelNetController(**meta_info)
+        model.load_state_dict(torch.load(base_path / f'model_weights.pth', map_location=device))
+        return model
+
+
+class ForecastingGDASMixedConcatNetController(ForecastingAbstractMixedNetController,
+                                              ForecastingGDASNetworkController):
+    net_type = ForecastingGDASMixedConcatNet
+
+    @staticmethod
+    def load(base_path: Path,
+             device=torch.device('cpu'),
+             model: Optional["ForecastingGDASMixedConcatNetController"] = None):
+        if model is None:
+            with open(base_path / f'meta_info.json', 'r') as f:
+                meta_info = json.load(f)
+            model = ForecastingGDASMixedConcatNetController(**meta_info)
         model.load_state_dict(torch.load(base_path / f'model_weights.pth', map_location=device))
         return model

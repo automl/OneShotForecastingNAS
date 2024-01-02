@@ -6,10 +6,10 @@ from torch import nn
 
 from tsf_oneshot.prediction_heads.heads import (
     QuantileHead, MSEOutput, MAEOutput, GammaOutput, PoissonOutput, NormalOutput, StudentTOutput,
-FlatMAEOutput, FlatMSEOutput,
+    FlatMAEOutput, FlatMSEOutput, FlatQuantileOutput
 )
 
-PREDICTION_HEADS = {
+PREDICTION_HEADs = {
     "quantile": QuantileHead,
     "mse": MSEOutput,
     "mae": MAEOutput,
@@ -17,15 +17,16 @@ PREDICTION_HEADS = {
     "studentT": StudentTOutput,
 }
 
-FLATPREDICTION_HEADS = {
+FLATPREDICTION_HEADs = {
     'mae': FlatMAEOutput,
-    'mse': FlatMSEOutput
+    'mse': FlatMSEOutput,
+    'quantile': FlatQuantileOutput
 }
 
 
 class MixedHead(nn.Module):
     """ Mixed Forecasting Heads"""
-    available_ops = PREDICTION_HEADS
+    available_ops = PREDICTION_HEADs
 
     def __init__(self,
                  d_model: int,
@@ -69,7 +70,7 @@ class MixedHead(nn.Module):
 
 
 class MixedFlatHEADAS(MixedHead):
-    available_ops = FLATPREDICTION_HEADS
+    available_ops = FLATPREDICTION_HEADs
 
     def __init__(self,
                  window_size: int,

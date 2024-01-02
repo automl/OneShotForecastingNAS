@@ -12,16 +12,12 @@ class QuantileHead(nn.Module):
                  d_model: int,
                  d_output: int,
                  quantiles: list[float] | None = None,
-                 val_out_idx: int | None = None
                  ):
         super().__init__()
         if quantiles is None:
-            quantiles = [0.1, 0.5, 0.9]
-            val_out_idx = 1
-        else:
-            assert val_out_idx is not None
+            quantiles = [0.1, 0.9, 0.5]
 
-        self.val_out_idx = val_out_idx
+        self.val_out_idx = -1
         self.nets = nn.ModuleList([nn.Linear(d_model, d_output) for _ in range(len(quantiles))])
         self.quantiles = quantiles
 
@@ -75,7 +71,7 @@ class MAEOutput(MSEOutput):
 # TODO check if it is necessary to implement add an projection layer to these heads!
 
 class FlatMSEOutput(nn.Module):
-    def __init__(self, window_size: int = 0, forecasting_horizon: int = 0, back_cast_ration: float = 0.3):
+    def __init__(self, window_size: int = 0, forecasting_horizon: int = 0, back_cast_ration: float = 0.0):
         super(FlatMSEOutput, self).__init__()
         self.window_size = window_size
         self.forecasting_horizon = forecasting_horizon
@@ -94,6 +90,44 @@ class FlatMSEOutput(nn.Module):
 class FlatMAEOutput(FlatMSEOutput):
     def loss(self, targets: torch.Tensor, predictions: torch.Tensor):
         return F.l1_loss(targets, predictions)
+
+
+class FlatQuantileOutput(nn.Module):
+    def __init__(self,
+                 quantiles: list[float] | None = None,
+                 window_size: int = 0, forecasting_horizon: int = 0,
+                 forecast_only: bool = False,
+                 ):
+        super(FlatQuantileOutput, self).__init__()
+        if quantiles is None:
+            quantiles = [0.1, 0.9, 0.5]
+
+        self.quantiles = quantiles
+        self.forecast_only = forecast_only
+        if self.forecast_only:
+            self.nets = nn.ModuleList([nn.Linear(forecasting_horizon,
+                                                 forecasting_horizon) for _ in range(len(quantiles) - 1)])
+        else:
+            self.nets_backcast = nn.ModuleList([nn.Linear(window_size,
+                                                          window_size) for _ in range(len(quantiles) - 1)])
+            self.nets_forecast = nn.ModuleList([nn.Linear(forecasting_horizon,
+                                                          forecasting_horizon) for _ in range(len(quantiles) - 1)])
+        self.window_size = window_size
+        self.forecasting_horizon = forecasting_horizon
+
+    def forward(self, x: torch.Tensor) -> list[torch.Tensor]:
+        # the input of flat header is of shape [B, L, N], we need to transpose them first back to [B, N, L]
+        x_input = torch.transpose(x, 1, 2)
+        if self.forecast_only:
+            return [torch.transpose(net(x_input), 1, 2) for net in self.nets] + [x]
+        else:
+            if x_input.shape[-1] == self.window_size:
+                return [torch.transpose(net(x_input), 1, 2) for net in self.nets_backcast] + [x]
+            else:
+                return [torch.transpose(net(x_input), 1, 2) for net in self.nets_forecast] + [x]
+
+    def get_inference_pred(self, predictions: list[torch.Tensor]):
+        return predictions[self.val_out_idx]
 
 
 class DistProjectionLayer(nn.Module):

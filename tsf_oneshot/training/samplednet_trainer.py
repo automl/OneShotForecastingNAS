@@ -100,6 +100,9 @@ class SampledForecastingNetTrainer:
         self.amp_enable = amp_enable
         self.scaler = torch.cuda.amp.GradScaler(enabled=amp_enable)
 
+        self.forecast_only = model.forecast_only
+        self.backcast_loss_ration = model.backcast_loss_ration
+
     def preprocessing(self, X: dict):
         past_targets = X['past_targets'].float()
         past_features = X['past_features']
@@ -250,7 +253,6 @@ class SampledForecastingNetTrainer:
             }
             func = partial(save_images, kwargs=kwargs)
 
-
     def update_weights(self, train_X, train_y):
         x_past_train, x_future_train, scale_value_train = self.preprocessing(train_X)
         target_train = train_y['future_targets'].float().to(self.device)
@@ -260,10 +262,21 @@ class SampledForecastingNetTrainer:
         with torch.cuda.amp.autocast(enabled=self.amp_enable):
             prediction_train = self.model(x_past_train, x_future_train, )
             prediction = rescale_output(prediction_train, *scale_value_train, device=self.device)
+            if self.forecast_only:
+                w_loss = self.model.get_training_loss(
+                    target_train, prediction,
+                )
+            else:
+                backcast, forecast = prediction
+                target_train_backcast = train_X['past_targets'].float()[:, -self.window_size:, :].to(self.device)
+                loss_backcast = self.model.get_training_loss(
+                    target_train_backcast, backcast
+                )
+                loss_forecast = self.model.get_training_loss(
+                    target_train, forecast,
+                )
+                w_loss = loss_backcast * self.backcast_loss_ration + loss_forecast
 
-            w_loss = self.model.get_training_loss(
-                target_train, prediction,
-            )
 
         self.scaler.scale(w_loss).backward()
         wandb.log({'weights training loss': w_loss})

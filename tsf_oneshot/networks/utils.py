@@ -1,20 +1,14 @@
-import inspect
 import torch
 from torch import nn
 from torch.nn import functional as F
+from tsf_oneshot.prediction_heads import MixedHead, MixedFlatHEADAS
 
 
-def get_kwargs():
-    # https://stackoverflow.com/a/65927265
-    # get the values and arguments of the current function
-    frame = inspect.currentframe().f_back
-    keys, _, _, values = inspect.getargvalues(frame)
-    kwargs = {}
-    for key in keys:
-        if key != 'self':
-            kwargs[key] = values[key]
-    return kwargs
-
+def get_head_out(decoder_output: torch.Tensor, heads: MixedHead | MixedFlatHEADAS, head_idx: int| None = None):
+    if head_idx is None:
+        return list(head(decoder_output) for head in heads)
+    else:
+        return heads[head_idx](decoder_output)
 
 # utils functions for DARTS and GDAS
 

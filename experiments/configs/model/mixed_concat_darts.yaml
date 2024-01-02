@@ -1,4 +1,4 @@
-type: darts_mixed_concat
+type: darts
 name: darts_mixed_concat
 model_type: mixed_concat
 
@@ -13,7 +13,6 @@ seq_model:
   # PRIMITIVES_encoder: ['transformer']
   PRIMITIVES_decoder: [ 'mlp_mix', 'gru','transformer', 'tcn', 'skip_connection' ]
   #  PRIMITIVES_decoder: ['lstm']
-  HEADS: [ 'quantile', 'mse', 'mae' ]
 
 flat_model:
   n_cells: 2
@@ -21,6 +20,7 @@ flat_model:
   n_cell_input_nodes: 1
   backcast_loss_ration: 0.1
   PRIMITIVES_encoder: [ 'mlp','nbeats_g','nbeats_s', 'nbeats_t', 'skip_connection' ]
-  HEADS: [ 'quantile', 'mse', 'mae' ]
+
+HEADs: [ 'mse', 'mae' ]
 
 use_second_order_grad: false
