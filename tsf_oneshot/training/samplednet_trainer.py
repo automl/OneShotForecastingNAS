@@ -198,6 +198,8 @@ class SampledForecastingNetTrainer:
             with torch.no_grad():
                 prediction_test = self.model(x_past_test, x_future_test)
                 prediction_test = self.model.get_inference_prediction(prediction_test)
+                if not self.forecast_only:
+                    prediction_test = prediction_test[-1]
                 prediction_test = rescale_output(prediction_test, *scale_value_test, device=self.device).cpu()
                 diff = (prediction_test - target_test)
 
