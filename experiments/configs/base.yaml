@@ -40,7 +40,7 @@ val_share: 0.5
 model_dir: /phys/ssd2/TSF_OneShot/
 
 train:
-  n_epochs: 150
+  n_epochs: 90
   grad_clip: 0.1
   amp_enable: true
   targe_scaler: 'standard'
