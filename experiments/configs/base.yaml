@@ -1,7 +1,7 @@
 seed: 0
 
 benchmark:
-  dataset_root: "/home/deng/tmp/TSF_DATA/"
+  dataset_root: "/phys/ssd2/TSF_DATA/"
   type: ???
   name: ???
   file_name: ???
@@ -37,7 +37,7 @@ model:
 
 val_share: 0.5
 
-model_dir: /home/deng/tmp/TSF_OneShot/
+model_dir: /phys/ssd2/TSF_OneShot/
 
 train:
   n_epochs: 150

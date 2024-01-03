@@ -190,13 +190,13 @@ def main(cfg: omegaconf.DictConfig):
         operations_decoder_seq, has_edges_decoder_seq = get_optimized_archs(saved_data_info, 'arch_p_decoder_seq')
         head_seq, _ = get_optimized_archs(saved_data_info, 'arch_p_heads')
 
-
         operations_encoder_flat, has_edges_encoder_flat = get_optimized_archs(saved_data_info, 'arch_p_encoder_flat')
         del saved_data_info
         torch.cuda.empty_cache()
-        head_seq_idx = head_seq[0].item()
 
-        HEAD = list(cfg.model.seq_model.HEADs)[head_seq_idx]
+        head_seq_idx = head_seq[0]
+
+        HEAD = list(cfg.model.HEADs)[head_seq_idx]
         if model_type == 'mixed_concat':
             d_input_future = d_input_past
         net_init_kwargs = dict(d_input_past=d_input_past,

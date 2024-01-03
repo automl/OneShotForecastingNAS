@@ -8,7 +8,7 @@ seq_model:
   n_cells: 2
   n_nodes: 4
   n_cell_input_nodes: 1
-  backcast_loss_ration: 0.1
+  backcast_loss_ration: 0.0
   PRIMITIVES_encoder: [ 'mlp_mix','gru','transformer', 'tcn', 'skip_connection' ]
   # PRIMITIVES_encoder: ['transformer']
   PRIMITIVES_decoder: [ 'mlp_mix', 'gru','transformer', 'tcn', 'skip_connection' ]
@@ -18,7 +18,7 @@ flat_model:
   n_cells: 2
   n_nodes: 4
   n_cell_input_nodes: 1
-  backcast_loss_ration: 0.1
+  backcast_loss_ration: 0.0
   PRIMITIVES_encoder: [ 'mlp','nbeats_g','nbeats_s', 'nbeats_t', 'skip_connection' ]
 
 HEADS: [ 'quantile', 'mse', 'mae' ]
