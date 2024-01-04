@@ -33,7 +33,7 @@ def seed_everything(seed: int):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
-    # Otherwise, Conv1D with dilation will be too slow?
+    # Otherwise, Conv1D with dilation will be too slow
     torch.backends.cudnn.deterministic = False
     torch.backends.cudnn.benchmark = True
 
@@ -98,9 +98,12 @@ def main(cfg: omegaconf.DictConfig):
     window_size = int(base_window_size * cfg.dataloader.window_size_coefficient)
     """
     window_size = int(cfg.dataloader.window_size)
+    start_idx = window_size + max(dataset.lagged_value)
+    splits_new = regenerate_splits(dataset, val_share=val_share, start_idx=window_size + max(dataset.lagged_value), strategy='cv')
 
-    splits_new = regenerate_splits(dataset, val_share=val_share, start_idx=window_size + max(dataset.lagged_value))
+    #indices = np.arange(start_idx, len(dataset))
 
+    #splits_new = [indices, indices]
     train_data_loader, val_data_loader = get_dataloader(
         dataset=dataset, splits=splits_new, batch_size=cfg.dataloader.batch_size,
         num_batches_per_epoch=cfg.dataloader.num_batches_per_epoch,

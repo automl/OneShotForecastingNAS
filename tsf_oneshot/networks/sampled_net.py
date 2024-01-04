@@ -529,6 +529,10 @@ class MixedParallelSampledNet(AbstractMixedSampledNet):
 
 
 class MixedConcatSampledNet(AbstractMixedSampledNet):
+    def __init__(self, **kwargs):
+        super(MixedConcatSampledNet, self).__init__(**kwargs)
+        self.flat_net.forecast_only = False # TODO check if there is a better way to handle this
+
     def validate_input_kwargs(self, kwargs):
         kwargs = super().validate_input_kwargs(kwargs)
         kwargs['forecast_only_flat'] = False

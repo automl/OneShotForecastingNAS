@@ -47,10 +47,9 @@ def get_forecasting_dataset(n_prediction_steps,
 
 
 def regenerate_splits(dataset: TimeSeriesForecastingDataset, val_share: float, start_idx: int | None = None,
-                      n_folds: int = 5):
+                      n_folds: int = 5, strategy: str = 'cv'):
     # AutoPyTorch dataset does not allow overlap between different validation series (such that each time step will be
     # assigned the same weights). Therefore, here we reimplement train / validation splits
-    strategy = 'holdout'
 
     if strategy == 'holdout':
         n_prediction_steps = dataset.n_prediction_steps

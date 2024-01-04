@@ -112,8 +112,8 @@ def main(cfg: omegaconf.DictConfig):
 
     train_data_loader, val_data_loader, test_data_loader = get_dataloader(
         dataset=dataset, splits=split, batch_size=32,
-        #num_batches_per_epoch=cfg.dataloader.num_batches_per_epoch,
-        num_batches_per_epoch=None,
+        num_batches_per_epoch=cfg.dataloader.num_batches_per_epoch,
+        #num_batches_per_epoch=None,
         window_size=window_size,
         is_test_sets=[False, True, True],
         batch_size_test=8,
