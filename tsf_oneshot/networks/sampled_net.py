@@ -487,7 +487,6 @@ class AbstractMixedSampledNet(SampledNet):
                     flat_net_kwargs[arg_name] = all_kwargs[f'{arg_name}_flat']
 
         self.flat_net = SampledFlatNet(**flat_net_kwargs)
-        self.flat_net.forecast_only = False # TODO check if there is a better way to handle this
 
         # this function helps us to directly
         self.d_output = d_output
@@ -532,6 +531,7 @@ class MixedParallelSampledNet(AbstractMixedSampledNet):
 class MixedConcatSampledNet(AbstractMixedSampledNet):
     def validate_input_kwargs(self, kwargs):
         kwargs = super().validate_input_kwargs(kwargs)
+        kwargs['forecast_only_flat'] = False
         assert kwargs['d_input_future'] == kwargs['d_input_past']
         return kwargs
 
