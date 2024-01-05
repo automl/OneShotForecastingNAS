@@ -164,6 +164,7 @@ def get_dataloader(dataset: TimeSeriesForecastingDataset,
                    is_test_sets: list[int] | None = None,
                    padding_value: float = 0.0,
                    batch_size_test: int | None = None,
+                   sample_interval: int = 1,
                    ):
     n_prediction_steps = dataset.n_prediction_steps
 
@@ -171,7 +172,7 @@ def get_dataloader(dataset: TimeSeriesForecastingDataset,
     max_lagged_value += window_size + n_prediction_steps
 
     padding_collector = PadSequenceCollector(window_size=window_size,
-                                             sample_interval_red_seq_len=1,
+                                             sample_interval_red_seq_len=sample_interval,
                                              sample_interval_fix_seq_len=1,
                                              target_padding_value=padding_value,
                                              seq_max_length=max_lagged_value)

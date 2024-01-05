@@ -97,6 +97,8 @@ def main(cfg: omegaconf.DictConfig):
         
     window_size = int(base_window_size * cfg.dataloader.window_size_coefficient)
     """
+
+
     window_size = int(cfg.benchmark.dataloader.window_size)
     start_idx = window_size + max(dataset.lagged_value)
     splits_new = regenerate_splits(dataset, val_share=val_share, start_idx=window_size + max(dataset.lagged_value), strategy='cv')
@@ -104,22 +106,30 @@ def main(cfg: omegaconf.DictConfig):
     #indices = np.arange(start_idx, len(dataset))
 
     #splits_new = [indices, indices]
+
     if search_type != 'darts':
         # for gdas, we need more iterations
         num_batches_per_epoch = int(cfg.benchmark.dataloader.num_batches_per_epoch) * 2
         n_epochs = int(cfg.train.n_epochs) * 2
-        batch_size = cfg.benchmark.dataloader.batch_size * 2
+        search_sample_interval = 1
     else:
         num_batches_per_epoch = int(cfg.benchmark.dataloader.num_batches_per_epoch)
         n_epochs = int(cfg.train.n_epochs)
-        batch_size = cfg.benchmark.dataloader.batch_size
+        search_sample_interval = cfg.benchmark.dataloader.get('search_sample_interval', 1)
+    batch_size = cfg.benchmark.dataloader.batch_size
 
     train_data_loader, val_data_loader = get_dataloader(
         dataset=dataset, splits=splits_new, batch_size=batch_size,
         num_batches_per_epoch=num_batches_per_epoch,
         window_size=window_size,
+        sample_interval=search_sample_interval
     )
+    # we need to adjust the values to initialize our networks
+    window_size = (window_size - 1) // search_sample_interval + 1
+    n_prediction_steps = (dataset.n_prediction_steps- 1) // search_sample_interval + 1
+
     num_targets = dataset.num_targets
+
 
     n_time_features = len(dataset.time_feature_transform)
     d_input_past = len(dataset.lagged_value) * num_targets + n_time_features
@@ -138,7 +148,7 @@ def main(cfg: omegaconf.DictConfig):
             {'d_input_past': d_input_past,
              'OPS_kwargs': {
                  'mlp_mix': {
-                     'forecasting_horizon': dataset.n_prediction_steps,
+                     'forecasting_horizon': n_prediction_steps,
                      'window_size': window_size,
                  }
              },
@@ -159,7 +169,7 @@ def main(cfg: omegaconf.DictConfig):
         }
         net_init_kwargs.update(
             {'window_size': window_size,
-             'forecasting_horizon': dataset.n_prediction_steps,
+             'forecasting_horizon': n_prediction_steps,
              'PRIMITIVES_encoder': list(cfg.model.PRIMITIVES_encoder),
              'HEADs': list(cfg.model.HEADs),
              'OPS_kwargs': {},
@@ -184,13 +194,13 @@ def main(cfg: omegaconf.DictConfig):
             'PRIMITIVES_decoder_seq': list(cfg.model.seq_model.PRIMITIVES_decoder),
             'OPS_kwargs_seq': {
                 'mlp_mix': {
-                    'forecasting_horizon': dataset.n_prediction_steps,
+                    'forecasting_horizon': n_prediction_steps,
                     'window_size': window_size,
                 }
             },
 
             'window_size': window_size,
-            'forecasting_horizon': dataset.n_prediction_steps,
+            'forecasting_horizon': n_prediction_steps,
             'n_cells_flat': int(cfg.model.flat_model.n_cells),
             'n_nodes_flat': int(cfg.model.flat_model.n_nodes),
             'n_cell_input_nodes_flat': int(cfg.model.flat_model.n_cell_input_nodes),
@@ -313,7 +323,8 @@ def main(cfg: omegaconf.DictConfig):
         train_loader=train_data_loader,
         val_loader=val_data_loader,
         window_size=window_size,
-        n_prediction_steps=dataset.n_prediction_steps,
+        n_prediction_steps=n_prediction_steps,
+        search_sample_interval=search_sample_interval,
         lagged_values=dataset.lagged_value,
         target_scaler=target_scaler,
         grad_clip=cfg.train.grad_clip,

@@ -10,6 +10,7 @@ make_dataset_uni_variant: false
 
 dataloader:
   batch_size: 16
-  window_size: 96
+  window_size: 192
   # window_size_coefficient: 1.25
+  search_sample_interval: 4
   num_batches_per_epoch: 1000

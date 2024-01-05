@@ -129,7 +129,6 @@ def main(cfg: omegaconf.DictConfig):
 
     # TODO check what data to pass
     saved_data_info = torch.load(out_path / 'Model' / 'model_weights.pth')
-
     if model_type == 'seq':
         operations_encoder, has_edges_encoder = get_optimized_archs(saved_data_info, 'arch_p_encoder')
         operations_decoder, has_edges_decoder = get_optimized_archs(saved_data_info, 'arch_p_decoder')
@@ -194,6 +193,7 @@ def main(cfg: omegaconf.DictConfig):
         head_seq, _ = get_optimized_archs(saved_data_info, 'arch_p_heads')
 
         operations_encoder_flat, has_edges_encoder_flat = get_optimized_archs(saved_data_info, 'arch_p_encoder_flat')
+
         del saved_data_info
         torch.cuda.empty_cache()
 

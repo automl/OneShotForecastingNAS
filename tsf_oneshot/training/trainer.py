@@ -37,9 +37,9 @@ def save_images(batch_idx, var_idx, kwargs):
     fig, ax = plt.subplots(2, 1)
     ax[0].plot(past, label='Past')
     ax[0].plot(np.arange(len(past), len(past) + len(prediction)),
-             future, label='GroundTRUTH')
+               future, label='GroundTRUTH')
     ax[0].plot(np.arange(len(past), len(past) + len(prediction)),
-             prediction, label='Prediction')
+               prediction, label='Prediction')
     ax[0].legend()
     ax[0].set_title('Train')
     i = 0
@@ -56,9 +56,9 @@ def save_images(batch_idx, var_idx, kwargs):
 
     ax[1].plot(past, label='Past')
     ax[1].plot(np.arange(len(past), len(past) + len(prediction)),
-             future, label='GroundTRUTH')
+               future, label='GroundTRUTH')
     ax[1].plot(np.arange(len(past), len(past) + len(prediction)),
-             prediction, label='Prediction')
+               prediction, label='Prediction')
     ax[1].legend()
     ax[1].set_title('val')
     fig.savefig(f'train_val{i}_batch_{batch_idx}_var_{var_idx}.png')
@@ -95,6 +95,7 @@ class ForecastingTrainer:
                  val_loader: torch.utils.data.DataLoader,
                  window_size: int,
                  n_prediction_steps: int,
+                 search_sample_interval: int,
                  lagged_values: list[int],
                  target_scaler: TargetScaler,
                  grad_clip: float = 0,
@@ -116,6 +117,8 @@ class ForecastingTrainer:
         self.lagged_values = lagged_values
         self.window_size = window_size
         self.n_prediction_steps = n_prediction_steps
+        self.search_sample_interval = search_sample_interval
+        self.target_indices = torch.arange(0, n_prediction_steps) * search_sample_interval
 
         self.cached_lag_mask_encoder = None
         self.cached_lag_mask_decoder = None
@@ -188,7 +191,7 @@ class ForecastingTrainer:
         """
         x_future = future_features.to(self.device)
 
-        return x_past, x_future, (loc, scale)
+        return x_past, x_future[:, self.target_indices], (loc, scale)
 
     def train_epoch(self, epoch: int):
         if self.lr_scheduler_w is not None:
@@ -227,7 +230,7 @@ class ForecastingTrainer:
 
     def update_weights(self, train_X, train_y):
         x_past_train, x_future_train, scale_value_train = self.preprocessing(train_X)
-        target_train = train_y['future_targets'].float().to(self.device)
+        target_train = train_y['future_targets'][:, self.target_indices].float().to(self.device)
 
         with torch.cuda.amp.autocast(enabled=self.amp_enable):
             prediction_train, w_dag_train = self.model(x_past_train, x_future_train, return_w_head=True)
@@ -289,7 +292,7 @@ class ForecastingTrainer:
 
     def update_alphas(self, val_X, val_y):
         x_past_val, x_future_val, scale_value_val = self.preprocessing(val_X)
-        target_val = val_y['future_targets'].float().to(self.device)
+        target_val = val_y['future_targets'][:, self.target_indices].float().to(self.device)
 
         with torch.cuda.amp.autocast(enabled=self.amp_enable):
 
@@ -376,7 +379,7 @@ class ForecastingDARTSSecondOrderTrainer(ForecastingTrainer):
     def __init__(self,
                  model: ForecastingDARTSNetworkController,
                  architect: Architect,
-                 lr_init:float | None=None,
+                 lr_init: float | None = None,
                  **kwargs,
                  ):
         super(ForecastingDARTSSecondOrderTrainer, self).__init__(model=model, **kwargs)
@@ -386,8 +389,7 @@ class ForecastingDARTSSecondOrderTrainer(ForecastingTrainer):
             raise ValueError("either lr_scheduler_w or lr_init must be given")
         self.lr_init = lr_init
 
-
-    def train_epoch(self, epoch: int, update_alpha:bool=False):
+    def train_epoch(self, epoch: int, update_alpha: bool = False):
         if self.lr_scheduler_w is not None:
             self.lr_scheduler_w.step()
             lr = self.lr_scheduler_w.get_lr()[0]
@@ -401,14 +403,14 @@ class ForecastingDARTSSecondOrderTrainer(ForecastingTrainer):
             x_past_train, x_future_train, scale_value_train = self.preprocessing(train_X)
             x_past_val, x_future_val, scale_value_val = self.preprocessing(val_X)
 
-            train_y = train_y.float().to(self.device)
-            val_y = val_y.float().to(self.device)
+            train_y = train_y[:, self.target_indices].float().to(self.device)
+            val_y = val_y[:, self.target_indices].float().to(self.device)
 
             self.a_optimizer.zero_grad()
             with torch.cuda.amp.autocast(enabled=self.amp_enable):
                 self.architect.unrolled_backward(x_past_train, x_future_train, train_y, scale_value_train,
                                                  x_past_val, x_future_val, val_y, scale_value_val,
-                                                 lr, self.w_optimizer,self.amp_enable, self.scaler,
+                                                 lr, self.w_optimizer, self.amp_enable, self.scaler,
                                                  )
 
             if self.grad_clip > 0:
@@ -431,7 +433,8 @@ class ForecastingDARTSSecondOrderTrainer(ForecastingTrainer):
                 prediction_train, w_dag_train = self.model(x_past_train, x_future_train, return_w_head=True)
 
                 w_loss = self.model.get_training_loss(train_y,
-                                                      rescale_output(prediction_train, *scale_value_train, device=self.device),
+                                                      rescale_output(prediction_train, *scale_value_train,
+                                                                     device=self.device),
                                                       w_dag_train
                                                       )
             self.scaler.scale(w_loss).backward()
@@ -449,4 +452,3 @@ class ForecastingDARTSSecondOrderTrainer(ForecastingTrainer):
 
             self.scaler.step(self.w_optimizer)
             self.scaler.update()
-
