@@ -100,7 +100,7 @@ def main(cfg: omegaconf.DictConfig):
     window_size = int(base_window_size * cfg.dataloader.window_size_coefficient)
     """
 
-    window_size = int(cfg.dataloader.window_size)
+    window_size = int(cfg.benchmark.dataloader.window_size)
     split = [np.arange(b1, b2 - dataset.n_prediction_steps) for b1, b2 in zip(border1s, border2s)]
 
     split = [
@@ -112,11 +112,12 @@ def main(cfg: omegaconf.DictConfig):
 
     train_data_loader, val_data_loader, test_data_loader = get_dataloader(
         dataset=dataset, splits=split, batch_size=32,
-        num_batches_per_epoch=cfg.dataloader.num_batches_per_epoch,
+        #num_batches_per_epoch=cfg.benchmark.data_loader.num_batches_per_epoch,
+        num_batches_per_epoch=500,
         #num_batches_per_epoch=None,
         window_size=window_size,
         is_test_sets=[False, True, True],
-        batch_size_test=8,
+        batch_size_test=32,
     )
     num_targets = dataset.num_targets
 
@@ -128,6 +129,7 @@ def main(cfg: omegaconf.DictConfig):
 
     # TODO check what data to pass
     saved_data_info = torch.load(out_path / 'Model' / 'model_weights.pth')
+
     if model_type == 'seq':
         operations_encoder, has_edges_encoder = get_optimized_archs(saved_data_info, 'arch_p_encoder')
         operations_decoder, has_edges_decoder = get_optimized_archs(saved_data_info, 'arch_p_decoder')

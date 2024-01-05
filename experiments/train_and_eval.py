@@ -97,16 +97,26 @@ def main(cfg: omegaconf.DictConfig):
         
     window_size = int(base_window_size * cfg.dataloader.window_size_coefficient)
     """
-    window_size = int(cfg.dataloader.window_size)
+    window_size = int(cfg.benchmark.dataloader.window_size)
     start_idx = window_size + max(dataset.lagged_value)
     splits_new = regenerate_splits(dataset, val_share=val_share, start_idx=window_size + max(dataset.lagged_value), strategy='cv')
 
     #indices = np.arange(start_idx, len(dataset))
 
     #splits_new = [indices, indices]
+    if search_type != 'darts':
+        # for gdas, we need more iterations
+        num_batches_per_epoch = int(cfg.benchmark.dataloader.num_batches_per_epoch) * 2
+        n_epochs = int(cfg.train.n_epochs) * 2
+        batch_size = cfg.benchmark.dataloader.batch_size * 2
+    else:
+        num_batches_per_epoch = int(cfg.benchmark.dataloader.num_batches_per_epoch)
+        n_epochs = int(cfg.train.n_epochs)
+        batch_size = cfg.benchmark.dataloader.batch_size
+
     train_data_loader, val_data_loader = get_dataloader(
-        dataset=dataset, splits=splits_new, batch_size=cfg.dataloader.batch_size,
-        num_batches_per_epoch=cfg.dataloader.num_batches_per_epoch,
+        dataset=dataset, splits=splits_new, batch_size=batch_size,
+        num_batches_per_epoch=num_batches_per_epoch,
         window_size=window_size,
     )
     num_targets = dataset.num_targets
@@ -328,9 +338,9 @@ def main(cfg: omegaconf.DictConfig):
     # epoch_start = trainer.load(out_path, model=model, w_optimizer=w_optimizer,
     #                               a_optimizer=a_optimizer, lr_scheduler_w=lr_scheduler)
 
-    for epoch in range(epoch_start, cfg.train.n_epochs):
+    for epoch in range(epoch_start, n_epochs):
         w_loss = trainer.train_epoch(epoch)
-        if epoch in [30, 60, 90, 120, 150]:
+        if epoch in [29, 59, 89, 119, 149]:
             trainer.save(out_path / f'epoch_{epoch}', epoch=epoch)
 
         if not torch.isnan(w_loss):

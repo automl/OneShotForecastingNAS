@@ -279,6 +279,7 @@ class ForecastingTrainer:
             self.scaler.unscale_(self.w_optimizer)
             gradient_norm = self.model.grad_norm_weights()
             wandb.log({'gradient_norm_weights': gradient_norm})
+
         self.scaler.step(self.w_optimizer)
         self.scaler.update()
 
@@ -384,6 +385,7 @@ class ForecastingDARTSSecondOrderTrainer(ForecastingTrainer):
             # TODO check if amp works on this type of architect
             raise ValueError("either lr_scheduler_w or lr_init must be given")
         self.lr_init = lr_init
+
 
     def train_epoch(self, epoch: int, update_alpha:bool=False):
         if self.lr_scheduler_w is not None:
