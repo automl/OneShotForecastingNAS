@@ -80,6 +80,7 @@ class AbstractSearchEncoder(nn.Module):
                 num_edges = cell.num_edges
                 edge2index = cell.edge2index
         self.cells = nn.ModuleList(cells)
+        self.edge2index = edge2index
 
         self.num_edges = num_edges
 
@@ -254,6 +255,7 @@ class AbstractFlatEncoder(AbstractSearchEncoder):
             if num_edges is None:
                 num_edges = cell.num_edges
         self.cells = nn.ModuleList(cells)
+        self.edge2index = edge2index
 
         self.num_edges = num_edges
         self._device = torch.device('cpu')

@@ -79,6 +79,9 @@ class ForecastingAbstractNetwork(nn.Module):
         self.encoder_n_edges = self.encoder.num_edges
         self.decoder_n_edges = self.decoder.num_edges
 
+        self.encoder_edge2index = self.encoder.edge2index
+        self.decoder_edge2index = self.decoder.edge2index
+
     @staticmethod
     def get_encoder(**encoder_kwargs):
         raise NotImplementedError
@@ -169,6 +172,7 @@ class ForecastingFlatAbstractNetwork(nn.Module):
                                      PRIMITIVES=HEADs, OPS_kwargs=HEADs_kwargs)
 
         self.encoder_n_edges = self.encoder.num_edges
+        self.encoder_edge2index = self.encoder.edge2index
 
     @staticmethod
     def get_encoder(**encoder_kwargs):
@@ -279,6 +283,13 @@ class ForecastingAbstractMixedNet(nn.Module):
         # for the case of concat output, flat
         self.forecast_only_flat = forecast_only_flat
         self.forecast_only_seq = forecast_only_seq
+
+        self.n_nodes_seq = n_nodes_seq
+        self.n_nodes_flat = n_nodes_flat
+
+        self.encoder_edge2index_seq = self.seq_net.encoder.edge2index
+        self.decoder_edge2index_seq = self.seq_net.decoder.edge2index
+        self.encoder_edge2index_flat = self.flat_net.encoder.edge2index
 
     def validate_input_kwargs(self, kwargs):
         return kwargs

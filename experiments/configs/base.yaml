@@ -34,14 +34,14 @@ val_share: 0.5
 model_dir: /phys/ssd2/TSF_OneShot/
 
 train:
-  n_epochs: 90
+  n_epochs: 30
   grad_clip: 0.1
   amp_enable: true
   targe_scaler: 'standard'
 
 w_optimizer:
   type: 'sgd'
-  lr: 0.1
+  lr: 1e-3
   weight_decay: 5e-4
   momentum: 0.9
 
@@ -55,7 +55,7 @@ a_optimizer:
 
 lr_scheduler_type: 'CosineAnnealingWarmRestarts'
 lr_scheduler:
-  T_0: 30
+  T_0: 10
   T_mult: 1
   eta_min: 1e-6
 

@@ -1,7 +1,10 @@
+import copy
 import os
 from pathlib import Path
 
+import omegaconf
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 from tqdm.contrib import tzip
 
 from autoPyTorch.pipeline.components.setup.forecasting_target_scaling.utils import TargetScaler
@@ -20,6 +23,7 @@ from torch import nn
 import torch
 import numpy as np
 from tsf_oneshot.training.training_utils import scale_value, rescale_output
+from tsf_oneshot.training.utils import get_optimizer
 
 
 def save_images(batch_idx, var_idx, kwargs):
@@ -93,6 +97,8 @@ class ForecastingTrainer:
                  lr_scheduler_a: torch.optim.lr_scheduler.LRScheduler | None,
                  train_loader: torch.utils.data.DataLoader,
                  val_loader: torch.utils.data.DataLoader,
+                 val_eval_loader: torch.utils.data.DataLoader | None,
+                 proj_intv: int,
                  window_size: int,
                  n_prediction_steps: int,
                  search_sample_interval: int,
@@ -109,6 +115,9 @@ class ForecastingTrainer:
 
         self.train_loader = train_loader
         self.val_loader = val_loader
+
+        self.val_eval_loader = val_eval_loader
+        self.proj_intv = proj_intv
 
         self.target_scaler = target_scaler
 
@@ -198,6 +207,7 @@ class ForecastingTrainer:
             self.lr_scheduler_w.step()
         if self.lr_scheduler_a is not None:
             self.lr_scheduler_a.step()
+        self.model.train()
 
         for (train_X, train_y), (val_X, val_y) in tzip(self.train_loader, self.val_loader):
             # update model weights
@@ -334,6 +344,42 @@ class ForecastingTrainer:
 
         return a_loss, prediction
 
+    def evaluate(self, test_loader, epoch, loader_type: str = 'test'):
+        mse_losses = []
+        mae_losses = []
+        num_data_points = 0
+
+        for (test_X, test_y) in tqdm(test_loader):
+            x_past_test, x_future_test, scale_value_test = self.preprocessing(test_X)
+            target_test = test_y['future_targets'].float()
+            n_data = len(target_test)
+
+            self.model.eval()
+            with torch.no_grad():
+                prediction_test, w_dag_test = self.model(x_past_test, x_future_test, return_w_head=True)
+                if not self.forecast_only:
+                    prediction_test = prediction_test[-1]
+                prediction_test = self.model.get_inference_prediction(prediction_test, w_dag_test)
+                prediction_test = rescale_output(prediction_test, *scale_value_test, device=self.device).cpu()
+                diff = (prediction_test - target_test)
+
+            mse_losses.append(n_data * torch.mean(diff ** 2).double().item())
+            mae_losses.append(n_data * torch.mean(torch.abs(diff)).item())
+            num_data_points += n_data
+
+        mean_mse_loses = sum(mse_losses) / num_data_points
+        mean_mae_losses = sum(mae_losses) / num_data_points
+        print(f'{loader_type} mse loss at epoch {epoch}: {mean_mse_loses}')
+        print(f'{loader_type} mae loss at epochf {epoch}: {mean_mae_losses}')
+        wandb.log({
+            f'{loader_type} MSE loss': mean_mse_loses,
+            f'{loader_type} MAE loss': mean_mae_losses
+        })
+        return {
+            'MSE loss': mean_mse_loses,
+            'MAE loss': mean_mae_losses
+        }
+
     def save(self, save_path: Path, epoch: int):
         if not save_path.exists():
             os.makedirs(save_path)
@@ -373,6 +419,56 @@ class ForecastingTrainer:
             lr_scheduler_a.load_state_dict(trainer_info['lr_scheduler_a'])
 
         return trainer_info.get('epoch', 0)
+
+    def pt_project(self, cfg: omegaconf.DictConfig):
+        # original from https://github.com/ruocwang/darts-pt
+        self.lr_scheduler_w = None
+        self.lr_scheduler_a = None
+
+        del self.w_optimizer
+        # reset w_optimizer
+        cfg_w_optimizer = copy.copy(cfg.w_optimizer)
+        cfg_w_optimizer.lr = cfg_w_optimizer.lr / 10
+        self.w_optimizer = get_optimizer(
+            cfg_optimizer=cfg_w_optimizer,
+            optim_groups=self.model.get_weight_optimizer_parameters(cfg_w_optimizer.weight_decay),
+            wd_in_p_groups=True
+        )
+        num_edges = len(self.model.candidate_flags)
+        tune_epochs = self.proj_intv * (num_edges - 1)
+        for epoch in range(tune_epochs):
+            if epoch % self.proj_intv == 0 or epoch == tune_epochs - 1:
+                # TODO write our own selection methods !!!
+
+                candidate_edges = np.nonzero(self.model.candidate_flags)[0]
+                selected_eid = np.random.choice(candidate_edges)
+
+                for n_edge, mask in zip(self.model.len_all_arch_p, self.model.all_masks):
+                    if selected_eid < n_edge:
+                        # in this case we have selected the correct
+                        mask_value: torch.Tensor = getattr(self.model, mask)
+                        n_ops = mask_value.shape[-1]
+                        best_opid = 0
+                        if n_ops < 1:
+                            # this should not happen!
+                            continue
+                        loss_best = np.inf
+                        for op_id in range(n_ops):
+                            mask_value[selected_eid] = -torch.inf
+                            mask_value[selected_eid, op_id] = 0
+
+                            loss = self.evaluate(self.val_eval_loader, epoch=op_id, loader_type='proj')['MSE loss']
+                            if loss < loss_best:
+                                loss_best = loss
+                                best_opid = op_id
+                        # we have evaluated all the operations, now we can safely return
+                        self.model.candidate_flags[selected_eid] = False
+                        mask_value[selected_eid] = -torch.inf
+                        mask_value[selected_eid, best_opid] = 0
+                        break
+                    else:
+                        selected_eid -= n_edge
+            self.train_epoch(epoch)
 
 
 class ForecastingDARTSSecondOrderTrainer(ForecastingTrainer):

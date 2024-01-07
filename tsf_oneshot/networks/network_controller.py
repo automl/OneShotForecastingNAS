@@ -90,10 +90,22 @@ class AbstractForecastingNetworkController(nn.Module):
         else:
             raise NotImplementedError
 
+        # These masks are used to remove the corresponding operations during pertubation
+        self.len_all_arch_p = [len(self.arch_p_encoder), len(self.arch_p_decoder), len(self.arch_p_heads)]
+
+        self.mask_encoder = nn.Parameter(torch.zeros_like(self.arch_p_encoder), requires_grad=False)
+        self.mask_decoder = nn.Parameter(torch.zeros_like(self.arch_p_decoder), requires_grad=False)
+        self.mask_head = nn.Parameter(torch.zeros_like(self.arch_p_heads), requires_grad=False)
+
+        self.all_masks = ['mask_encoder' 'mask_decoder', 'mask_head']
+        self.len_all_arch_p = [len(getattr(self, mask)) for mask in self.all_masks]
+
+        self.candidate_flags = [True] * sum(self.len_all_arch_p)
+
     def get_all_wags(self):
-        w_dag_encoder = self.get_w_dag(self.arch_p_encoder)
-        w_dag_decoder = self.get_w_dag(self.arch_p_decoder)
-        w_dag_head = self.get_w_dag(self.arch_p_heads)
+        w_dag_encoder = self.get_w_dag(self.arch_p_encoder + self.mask_encoder)
+        w_dag_decoder = self.get_w_dag(self.arch_p_decoder + self.mask_decoder)
+        w_dag_head = self.get_w_dag(self.arch_p_heads + self.mask_head)
         return dict(
             arch_p_encoder=w_dag_encoder,
             arch_p_decoder=w_dag_decoder,
@@ -261,7 +273,10 @@ class ForecastingDARTSNetworkController(AbstractForecastingNetworkController):
         self.normalizer = get_normalizer(normalizer)
 
     def get_w_dag(self, arch_p: torch.Tensor):
-        return apply_normalizer(self.normalizer, arch_p)
+        w_dag = apply_normalizer(self.normalizer, arch_p)
+        # this is applied when all arch_p is -torch.inf
+        w_dag = torch.where(torch.isnan(w_dag), 0, w_dag)
+        return w_dag
 
     def get_training_loss(self, targets: torch.Tensor, predictions: list[torch.Tensor], w_dag: torch.Tensor):
         losses = [w * head.loss(targets=targets, predictions=pred) for w, pred, head in
@@ -276,12 +291,16 @@ class ForecastingDARTSNetworkController(AbstractForecastingNetworkController):
         return losses
 
     def get_validation_loss(self, targets: torch.Tensor, predictions: list[torch.Tensor], w_dag: torch.Tensor):
+        inference_prediction = self.get_inference_prediction(predictions, w_dag)
+        return self.criterion(inference_prediction, targets)
+
+    def get_inference_prediction(self, prediction, w_dag):
         inference_prediction = [
             w * head.get_inference_pred(predictions=pred) for w, pred, head in zip(w_dag[0],
-                                                                                   predictions,
+                                                                                   prediction,
                                                                                    self.net.heads)
         ]
-        return self.criterion(sum(inference_prediction), targets)
+        return sum(inference_prediction)
 
     @staticmethod
     def load(base_path: Path, device=torch.device('cpu'), model: Optional["ForecastingDARTSNetworkController"] = None):
@@ -342,6 +361,14 @@ class AbstractForecastingFlatNetworkController(AbstractForecastingNetworkControl
             self.criterion = nn.L1Loss()
         else:
             raise NotImplementedError
+
+        self.mask_encoder = nn.Parameter(torch.zeros_like(self.arch_p_encoder), requires_grad=False)
+        self.mask_head = nn.Parameter(torch.zeros_like(self.arch_p_heads), requires_grad=False)
+
+        self.all_masks = ['mask_encoder', 'mask_head']
+        self.len_all_arch_p = [len(getattr(self, mask)) for mask in self.all_masks]
+
+        self.candidate_flags = [True] * sum(self.len_all_arch_p)
 
     def get_all_wags(self):
         w_dag_encoder = self.get_w_dag(self.arch_p_encoder)
@@ -532,6 +559,18 @@ class ForecastingAbstractMixedNetController(AbstractForecastingNetworkController
         else:
             raise NotImplementedError
 
+        # These masks are used to remove the corresponding operations during pertubation
+
+        self.mask_encoder_seq = nn.Parameter(torch.zeros_like(self.arch_p_encoder_seq), requires_grad=False)
+        self.mask_decoder_seq = nn.Parameter(torch.zeros_like(self.arch_p_decoder_seq), requires_grad=False)
+        self.mask_encoder_flat = nn.Parameter(torch.zeros_like(self.arch_p_encoder_flat), requires_grad=False)
+        self.mask_head = nn.Parameter(torch.zeros_like(self.arch_p_heads), requires_grad=False)
+
+        self.all_masks = ['mask_encoder_seq', 'mask_decoder_seq', 'mask_encoder_flat', 'mask_head']
+        self.len_all_arch_p = [len(getattr(self, mask)) for mask in self.all_masks]
+
+        self.candidate_flags = [True] * sum(self.len_all_arch_p)
+
     def validate_input_kwargs(self, kwargs):
         backcast_loss_ration_seq = kwargs.pop('backcast_loss_ration_seq')
         backcast_loss_ration_flat = kwargs.pop('backcast_loss_ration_flat')
@@ -546,14 +585,13 @@ class ForecastingAbstractMixedNetController(AbstractForecastingNetworkController
         kwargs['forecast_only_flat'] = forecast_only_flat
         return kwargs
 
-
     def get_all_wags(self):
-        w_dag_encoder_seq = self.get_w_dag(self.arch_p_encoder_seq)
-        w_dag_decoder_seq = self.get_w_dag(self.arch_p_decoder_seq)
+        w_dag_encoder_seq = self.get_w_dag(self.arch_p_encoder_seq + self.mask_encoder_seq)
+        w_dag_decoder_seq = self.get_w_dag(self.arch_p_decoder_seq + self.mask_decoder_seq)
 
-        w_dag_encoder_flat = self.get_w_dag(self.arch_p_encoder_flat)
+        w_dag_encoder_flat = self.get_w_dag(self.arch_p_encoder_flat + self.mask_encoder_flat)
 
-        w_dag_head = self.get_w_dag(self.arch_p_heads)
+        w_dag_head = self.get_w_dag(self.arch_p_heads + self.mask_head)
 
         return dict(
             arch_p_encoder_seq=w_dag_encoder_seq,

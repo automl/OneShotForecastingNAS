@@ -76,11 +76,16 @@ def apply_normalizer(normalizer: dict, alpha):
 def gumble_sample(arch_parameters: torch.Tensor, tau: float):
     while True:
         gumbels = -torch.empty_like(arch_parameters).exponential_().log()
+        if torch.isinf(gumbels).any():
+            continue
         logits = (arch_parameters.log_softmax(dim=-1) + gumbels) / tau
+
         probs = nn.functional.softmax(logits, dim=-1)
+        probs = torch.where(arch_parameters.isinf(), 0, probs)
+        # to avoid the case when arch_parameters contains inf masks
+        # TODO check the necessity of doing so!
         if not (
-                (torch.isinf(gumbels).any())
-                or (torch.isinf(probs).any())
+                (torch.isinf(probs).any())
                 or (torch.isnan(probs).any())
         ):
             index = probs.max(-1, keepdim=True)[1]

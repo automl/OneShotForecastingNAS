@@ -5,9 +5,11 @@ model_type: flat
 grad_order: 1
 
 n_cells: 2
-n_nodes: 5
-n_cell_input_nodes: 1
+n_nodes: 4
+n_cell_input_nodes: 0
 backcast_loss_ration: 0.1
 
 PRIMITIVES_encoder: ['mlp','nbeats_g','nbeats_s', 'nbeats_t', 'skip_connection']
 HEADs: ['mse']
+
+

@@ -8,7 +8,7 @@ import torch
 from torch import nn
 from torch.nn.utils import weight_norm
 
-from tsf_oneshot.cells.encoders.components import _Chomp1d
+from tsf_oneshot.cells.encoders.components import _Chomp1d, TCN_DEFAULT_KERNEL_SIZE
 
 
 class ForecastingDecoderLayer(nn.Module):
@@ -71,12 +71,13 @@ class TransformerDecoderModule(ForecastingDecoderLayer):
 
 
 class TCNDecoderModule(ForecastingDecoderLayer):
-    def __init__(self, d_model: int, kernel_size: int = 15, stride: int = 1, dilation: int = 2, dropout: float = 0.1):
+    def __init__(self, d_model: int,
+                 kernel_size: int = TCN_DEFAULT_KERNEL_SIZE,
+                 stride: int = 1, dilation: int = 1, dropout: float = 0.1):
         super(TCNDecoderModule, self).__init__()
-        dilation1 = 1
-        padding = (kernel_size - 1) * dilation1
+        padding = (kernel_size - 1) * dilation
         self.conv1 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,
-                                           stride=stride, padding=padding, dilation=dilation1))
+                                           stride=stride, padding=padding, dilation=dilation))
         self.chomp1 = _Chomp1d(padding)
         self.relu1 = nn.ReLU()
         self.dropout1 = nn.Dropout(dropout)

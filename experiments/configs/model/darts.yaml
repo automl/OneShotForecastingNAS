@@ -8,6 +8,17 @@ d_model: 256
 n_cells: 2
 n_nodes: 4
 n_cell_input_nodes: 1
-backcast_loss_ration: 0.1
+backcast_loss_ration: 0.0
 
 use_second_order_grad: false
+select_with_pt: true
+proj_intv: 1
+
+model_kwargs:
+  tcn:
+    kernel_size: 15
+    dialation: 1
+
+
+
+

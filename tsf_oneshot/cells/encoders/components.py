@@ -7,6 +7,8 @@ from torch.nn.utils import weight_norm
 from autoPyTorch.pipeline.components.setup.network_backbone.forecasting_backbone.components_util import \
     PositionalEncoding
 
+TCN_DEFAULT_KERNEL_SIZE=15
+
 
 class GRUEncoderModule(nn.Module):
     def __init__(self, d_model: int, bias: bool = True):
@@ -70,7 +72,7 @@ class _Chomp1d(nn.Module):
 
 
 class TCNEncoderModule(nn.Module):
-    def __init__(self, d_model: int, kernel_size: int = 15, stride: int = 1, dilation: int = 1, dropout: float = 0.2):
+    def __init__(self, d_model: int, kernel_size: int = TCN_DEFAULT_KERNEL_SIZE, stride: int = 1, dilation: int = 1, dropout: float = 0.2):
         super(TCNEncoderModule, self).__init__()
         padding = (kernel_size - 1) * dilation
         self.conv1 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,

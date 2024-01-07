@@ -14,6 +14,12 @@ seq_model:
   PRIMITIVES_decoder: [ 'mlp_mix', 'gru', 'lstm', 'transformer', 'tcn', 'skip_connection' ]
   #  PRIMITIVES_decoder: ['lstm']
 
+  model_kwargs:
+    tcn:
+      kernel_size: 15
+      dialation: 1
+
+
 flat_model:
   n_cells: 2
   n_nodes: 4

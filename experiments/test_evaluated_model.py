@@ -33,10 +33,15 @@ def seed_everything(seed: int):
     torch.backends.cudnn.benchmark = True
 
 
-def get_optimized_archs(saved_data_info: dict[str, torch.Tensor], key: str):
-    archp = saved_data_info[key].cpu().argmax(-1).tolist()
-    has_edges = [True] * len(archp)
-
+def get_optimized_archs(saved_data_info: dict[str, torch.Tensor], key: str, mask_key: str):
+    mask = saved_data_info.get(mask_key, None)
+    if mask is None:
+        archp = saved_data_info[key].cpu().argmax(-1).tolist()
+        has_edges = [True] * len(archp)
+    else:
+        mask = mask.cpu()
+        archp = (saved_data_info[key].cpu() + mask).argmax(-1).tolist()
+        has_edges = torch.isinf(mask).all(1).tolist()
     return archp, has_edges
 
 
@@ -130,21 +135,23 @@ def main(cfg: omegaconf.DictConfig):
     # TODO check what data to pass
     saved_data_info = torch.load(out_path / 'Model' / 'model_weights.pth')
     if model_type == 'seq':
-        operations_encoder, has_edges_encoder = get_optimized_archs(saved_data_info, 'arch_p_encoder')
-        operations_decoder, has_edges_decoder = get_optimized_archs(saved_data_info, 'arch_p_decoder')
-        head_idx, _ = get_optimized_archs(saved_data_info, 'arch_p_heads')
+        operations_encoder, has_edges_encoder = get_optimized_archs(saved_data_info, 'arch_p_encoder', 'mask_encoder')
+        operations_decoder, has_edges_decoder = get_optimized_archs(saved_data_info, 'arch_p_decoder', 'mask_decoder')
+        head_idx, _ = get_optimized_archs(saved_data_info, 'arch_p_heads', 'mask_head')
         del saved_data_info
+
+        ops_kwargs = cfg.model.get('model_kwargs', {})
+        ops_kwargs['mlp_mix'] = {
+                                    'forecasting_horizon': dataset.n_prediction_steps,
+                                    'window_size': window_size,
+                                },
+        heads_kwargs = cfg.model.get('heads_kwargs', {})
 
         head_idx = head_idx[0].item()
         HEAD = list(cfg.model.HEADs)[head_idx]
         net_init_kwargs = {
             'd_input_past': d_input_past,
-            'OPS_kwargs': {
-                'mlp_mix': {
-                    'forecasting_horizon': dataset.n_prediction_steps,
-                    'window_size': window_size,
-                }
-            },
+            'OPS_kwargs': ops_kwargs,
             'd_input_future': d_input_future,
             'd_model': int(cfg.model.d_model),
             'd_output': d_output,
@@ -158,24 +165,27 @@ def main(cfg: omegaconf.DictConfig):
             'PRIMITIVES_encoder': list(cfg.model.PRIMITIVES_encoder),
             'PRIMITIVES_decoder': list(cfg.model.PRIMITIVES_decoder),
             'HEAD': HEAD,
-            'HEADs_kwargs': {},
+            'HEADs_kwargs': heads_kwargs,
         }
         model = SampledNet(**net_init_kwargs)
 
     elif model_type == 'flat':
-        operations_encoder, has_edges_encoder = get_optimized_archs(saved_data_info, 'arch_p_encoder')
-        head_idx, _ = get_optimized_archs(saved_data_info, 'arch_p_heads')
+        operations_encoder, has_edges_encoder = get_optimized_archs(saved_data_info, 'arch_p_encoder', 'mask_encoder')
+        head_idx, _ = get_optimized_archs(saved_data_info, 'arch_p_heads', 'mask_head')
         del saved_data_info
         torch.cuda.empty_cache()
 
         head_idx = head_idx[0].item()
         HEAD = list(cfg.model.HEADs)[head_idx]
 
+        ops_kwargs = cfg.model.get('model_kwargs', {})
+        heads_kwargs = cfg.model.get('heads_kwargs', {})
+
         net_init_kwargs = dict(
             window_size=window_size,
             forecasting_horizon=dataset.n_prediction_steps,
             d_output=d_output,
-            OPS_kwargs={},
+            OPS_kwargs=ops_kwargs,
             n_cells=int(cfg.model.n_cells) * 2,
             n_nodes=int(cfg.model.n_nodes),
             operations_encoder=operations_encoder,
@@ -183,23 +193,40 @@ def main(cfg: omegaconf.DictConfig):
             n_cell_input_nodes=int(cfg.model.n_cell_input_nodes),
             PRIMITIVES_encoder=list(cfg.model.PRIMITIVES_encoder),
             HEAD=HEAD,
-            HEADs_kwargs={},
+            HEADs_kwargs=heads_kwargs,
             backcast_loss_ration=float(cfg.model.get('backcast_loss_ration', 0.0))
         )
         model = SampledFlatNet(**net_init_kwargs)
     elif model_type.startswith('mixed'):
-        operations_encoder_seq, has_edges_encoder_seq = get_optimized_archs(saved_data_info, 'arch_p_encoder_seq')
-        operations_decoder_seq, has_edges_decoder_seq = get_optimized_archs(saved_data_info, 'arch_p_decoder_seq')
-        head_seq, _ = get_optimized_archs(saved_data_info, 'arch_p_heads')
-
-        operations_encoder_flat, has_edges_encoder_flat = get_optimized_archs(saved_data_info, 'arch_p_encoder_flat')
+        operations_encoder_seq, has_edges_encoder_seq = get_optimized_archs(
+            saved_data_info, 'arch_p_encoder_seq', 'mask_encoder_seq'
+        )
+        operations_decoder_seq, has_edges_decoder_seq = get_optimized_archs(
+            saved_data_info, 'arch_p_decoder_seq', 'mask_decoder_seq'
+        )
+        operations_encoder_flat, has_edges_encoder_flat = get_optimized_archs(
+            saved_data_info, 'arch_p_encoder_flat', 'mask_encoder_flat'
+        )
+        head, _ = get_optimized_archs(saved_data_info, 'arch_p_heads', 'mask_head')
 
         del saved_data_info
-        torch.cuda.empty_cache()
 
-        head_seq_idx = head_seq[0]
+        head_idx = head[0]
 
-        HEAD = list(cfg.model.HEADs)[head_seq_idx]
+        HEAD = list(cfg.model.HEADs)[head_idx]
+
+        ops_kwargs_seq = cfg.model.seq_model.get('model_kwargs', {})
+
+
+        ops_kwargs_seq['mlp_mix'] = {
+                    'forecasting_horizon': dataset.n_prediction_steps,
+                    'window_size': window_size,
+                }
+        heads_kwargs_seq = cfg.model.flat_model.get('head_kwargs', {})
+
+        ops_kwargs_flat = cfg.model.flat_model.get('model_kwargs', {})
+        heads_kwargs_flat = cfg.model.flat_model.get('head_kwargs', {})
+
         if model_type == 'mixed_concat':
             d_input_future = d_input_past
         net_init_kwargs = dict(d_input_past=d_input_past,
@@ -216,12 +243,7 @@ def main(cfg: omegaconf.DictConfig):
                                PRIMITIVES_encoder_seq=list(cfg.model.seq_model.PRIMITIVES_encoder),
                                PRIMITIVES_decoder_seq=list(cfg.model.seq_model.PRIMITIVES_decoder),
 
-                               OPS_kwargs_seq={
-                                   'mlp_mix': {
-                                       'forecasting_horizon': dataset.n_prediction_steps,
-                                       'window_size': window_size,
-                                   }
-                               },
+                               OPS_kwargs_seq=ops_kwargs_seq,
                                backcast_loss_ration_seq=float(cfg.model.seq_model.get('backcast_loss_ration', 0.0)),
 
                                window_size=window_size,
@@ -232,10 +254,10 @@ def main(cfg: omegaconf.DictConfig):
                                operations_encoder_flat=operations_encoder_flat,
                                has_edges_encoder_flat=has_edges_encoder_flat,
                                PRIMITIVES_encoder_flat=list(cfg.model.flat_model.PRIMITIVES_encoder),
-                               OPS_kwargs_flat={},
+                               OPS_kwargs_flat=ops_kwargs_flat,
                                HEAD=HEAD,
-                               HEADs_kwargs_seq={},
-                               HEADs_kwargs_flat={},
+                               HEADs_kwargs_seq=heads_kwargs_seq,
+                               HEADs_kwargs_flat=heads_kwargs_flat,
                                backcast_loss_ration_flat=float(cfg.model.flat_model.get('backcast_loss_ration', 0.0)),
                                )
         if model_type == 'mixed_concat':

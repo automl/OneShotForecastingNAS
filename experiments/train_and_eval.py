@@ -23,8 +23,10 @@ from tsf_oneshot.networks.network_controller import (
     ForecastingDARTSMixedConcatNetController,
     ForecastingGDASMixedConcatNetController,
 )
+from tsf_oneshot.cells.encoders.components import TCN_DEFAULT_KERNEL_SIZE
 
 from tsf_oneshot.training.trainer import ForecastingTrainer, ForecastingDARTSSecondOrderTrainer
+from tsf_oneshot.training.utils import get_optimizer
 
 
 def seed_everything(seed: int):
@@ -98,14 +100,13 @@ def main(cfg: omegaconf.DictConfig):
     window_size = int(base_window_size * cfg.dataloader.window_size_coefficient)
     """
 
-
     window_size = int(cfg.benchmark.dataloader.window_size)
     start_idx = window_size + max(dataset.lagged_value)
-    splits_new = regenerate_splits(dataset, val_share=val_share, start_idx=window_size + max(dataset.lagged_value), strategy='cv')
+    splits_new = regenerate_splits(dataset, val_share=val_share, start_idx=start_idx, strategy='cv')
 
-    #indices = np.arange(start_idx, len(dataset))
+    # indices = np.arange(start_idx, len(dataset))
 
-    #splits_new = [indices, indices]
+    # splits_new = [indices, indices]
 
     if search_type != 'darts':
         # for gdas, we need more iterations
@@ -124,12 +125,31 @@ def main(cfg: omegaconf.DictConfig):
         window_size=window_size,
         sample_interval=search_sample_interval
     )
+
+    if cfg.model.get('select_with_pt', False):
+        # if we would like to select architectures with perturbation: https://openreview.net/pdf?id=PKubaeJkw3
+        # we need to have another validation set to determine which edge and architectures performances best
+        split_val_pt_size = regenerate_splits(dataset, val_share=0.1, start_idx=start_idx, strategy='holdout')[-1]
+        val_eval_loader = get_dataloader(
+            dataset=dataset, splits=[split_val_pt_size], batch_size=batch_size,
+            num_batches_per_epoch=None,
+            is_test_sets=[True],
+            window_size=window_size,
+            sample_interval=search_sample_interval,
+            batch_size_test=batch_size,
+        )[0]
+        # the number of epochs that we need to train before evaluating the actual edge
+        proj_intv = cfg.model.get("proj_intv", 1)
+    else:
+        val_data_loader = None
+        proj_intv = 1
+        val_eval_loader = None
+
     # we need to adjust the values to initialize our networks
     window_size = (window_size - 1) // search_sample_interval + 1
-    n_prediction_steps = (dataset.n_prediction_steps- 1) // search_sample_interval + 1
+    n_prediction_steps = (dataset.n_prediction_steps - 1) // search_sample_interval + 1
 
     num_targets = dataset.num_targets
-
 
     n_time_features = len(dataset.time_feature_transform)
     d_input_past = len(dataset.lagged_value) * num_targets + n_time_features
@@ -144,20 +164,33 @@ def main(cfg: omegaconf.DictConfig):
             'n_cell_input_nodes': int(cfg.model.n_cell_input_nodes),
             'backcast_loss_ration': float(cfg.model.get('backcast_loss_ration', 0.0))
         }
+        ops_kwargs = cfg.model.get('model_kwargs', {})
+        ops_kwargs['mlp_mix'] = {
+                                    'forecasting_horizon': n_prediction_steps,
+                                    'window_size': window_size,
+                                },
+        heads_kwargs = cfg.model.get('heads_kwargs', {})
+        if 'tcn' in ops_kwargs:
+            ops_kwargs['tcn'].update(
+                {
+                    'kernel_size': int(np.ceil(ops_kwargs['tcn'].get('kernel_size', TCN_DEFAULT_KERNEL_SIZE)) / search_sample_interval)
+                }
+            )
+        else:
+            ops_kwargs['tcn'] = {
+                    'kernel_size': int(np.ceil(TCN_DEFAULT_KERNEL_SIZE / search_sample_interval))
+            }
+
         net_init_kwargs.update(
             {'d_input_past': d_input_past,
-             'OPS_kwargs': {
-                 'mlp_mix': {
-                     'forecasting_horizon': n_prediction_steps,
-                     'window_size': window_size,
-                 }
-             },
+             'OPS_kwargs': ops_kwargs,
              'd_input_future': d_input_future,
              'd_model': int(cfg.model.d_model),
              'd_output': d_output,
              'PRIMITIVES_encoder': list(cfg.model.PRIMITIVES_encoder),
              'PRIMITIVES_decoder': list(cfg.model.PRIMITIVES_decoder),
-             'HEADs': list(cfg.model.HEADs)
+             'HEADs': list(cfg.model.HEADs),
+             'HEADs_kwargs': heads_kwargs
              }
         )
     elif model_type == 'flat':
@@ -167,18 +200,42 @@ def main(cfg: omegaconf.DictConfig):
             'n_cell_input_nodes': int(cfg.model.n_cell_input_nodes),
             'backcast_loss_ration': float(cfg.model.get('backcast_loss_ration', 0.0))
         }
+        ops_kwargs = cfg.model.get('model_kwargs', {})
+        heads_kwargs = cfg.model.get('heads_kwargs', {})
         net_init_kwargs.update(
             {'window_size': window_size,
              'forecasting_horizon': n_prediction_steps,
              'PRIMITIVES_encoder': list(cfg.model.PRIMITIVES_encoder),
              'HEADs': list(cfg.model.HEADs),
-             'OPS_kwargs': {},
-             'HEADs_kwargs': {}
+             'OPS_kwargs': ops_kwargs,
+             'HEADs_kwargs': heads_kwargs
              }
         )
     elif model_type.startswith('mixed'):
         if model_type == 'mixed_concat':
             d_input_future = d_input_past
+
+        ops_kwargs_seq = cfg.model.seq_model.get('model_kwargs', {})
+
+        if 'tcn' in ops_kwargs_seq:
+            ops_kwargs_seq['tcn'].update(
+                {
+                    'kernel_size': int(np.ceil(ops_kwargs_seq['tcn'].get('kernel_size', TCN_DEFAULT_KERNEL_SIZE)) / search_sample_interval)
+                }
+            )
+        else:
+            ops_kwargs_seq['tcn'] = {
+                    'kernel_size': int(np.ceil(TCN_DEFAULT_KERNEL_SIZE / search_sample_interval))
+            }
+        ops_kwargs_seq['mlp_mix'] = {
+                    'forecasting_horizon': n_prediction_steps,
+                    'window_size': window_size,
+                }
+        heads_kwargs_seq = cfg.model.flat_model.get('head_kwargs', {})
+
+        ops_kwargs_flat = cfg.model.flat_model.get('model_kwargs', {})
+        heads_kwargs_flat = cfg.model.flat_model.get('head_kwargs', {})
+
 
         net_init_kwargs = {
             'd_input_past': d_input_past,
@@ -192,12 +249,7 @@ def main(cfg: omegaconf.DictConfig):
 
             'PRIMITIVES_encoder_seq': list(cfg.model.seq_model.PRIMITIVES_encoder),
             'PRIMITIVES_decoder_seq': list(cfg.model.seq_model.PRIMITIVES_decoder),
-            'OPS_kwargs_seq': {
-                'mlp_mix': {
-                    'forecasting_horizon': n_prediction_steps,
-                    'window_size': window_size,
-                }
-            },
+            'OPS_kwargs_seq': ops_kwargs_seq,
 
             'window_size': window_size,
             'forecasting_horizon': n_prediction_steps,
@@ -208,11 +260,11 @@ def main(cfg: omegaconf.DictConfig):
 
             'PRIMITIVES_encoder_flat': list(cfg.model.flat_model.PRIMITIVES_encoder),
 
-            'OPS_kwargs_flat': {},
+            'OPS_kwargs_flat': ops_kwargs_flat,
 
             'HEADs': list(cfg.model.HEADs),
-            'HEADs_kwargs_seq': {},
-            'HEADs_kwargs_flat': {},
+            'HEADs_kwargs_seq': heads_kwargs_seq,
+            'HEADs_kwargs_flat': heads_kwargs_flat,
         }
     else:
         raise NotImplementedError("Unknown model_class ")
@@ -272,37 +324,10 @@ def main(cfg: omegaconf.DictConfig):
 
     optim_groups = model.get_weight_optimizer_parameters(cfg.w_optimizer.weight_decay)
 
-    if cfg.w_optimizer.type == 'adamw':
-        w_optimizer = torch.optim.AdamW(
-            params=optim_groups,
-            lr=cfg.w_optimizer.lr,
-            betas=(cfg.w_optimizer.beta1, cfg.w_optimizer.beta2),
-        )
-    elif cfg.w_optimizer.type == 'sgd':
-        w_optimizer = torch.optim.SGD(
-            params=optim_groups,
-            lr=cfg.w_optimizer.lr,
-            momentum=cfg.w_optimizer.momentum,
-        )
-    else:
-        raise NotImplementedError
+    w_optimizer = get_optimizer(cfg_optimizer=cfg.w_optimizer, optim_groups=optim_groups, wd_in_p_groups=True)
 
-    if cfg.a_optimizer.type == 'adamw':
-        a_optimizer = torch.optim.AdamW(
-            params=model.arch_parameters(),
-            lr=cfg.a_optimizer.lr,
-            betas=(cfg.a_optimizer.beta1, cfg.a_optimizer.beta2),
-            weight_decay=cfg.a_optimizer.weight_decay
-        )
-    elif cfg.a_optimizer.type == 'adam':
-        a_optimizer = torch.optim.Adam(
-            params=model.arch_parameters(),
-            lr=cfg.a_optimizer.lr,
-            betas=(cfg.a_optimizer.beta1, cfg.a_optimizer.beta2),
-            weight_decay=cfg.a_optimizer.weight_decay
-        )
-    else:
-        raise NotImplementedError
+    a_optimizer = get_optimizer(cfg_optimizer=cfg.a_optimizer, optim_groups=model.arch_parameters(),
+                                wd_in_p_groups=False)
 
     if cfg.lr_scheduler_type == 'CosineAnnealingWarmRestarts':
         lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
@@ -322,6 +347,8 @@ def main(cfg: omegaconf.DictConfig):
         lr_scheduler_a=None,
         train_loader=train_data_loader,
         val_loader=val_data_loader,
+        val_eval_loader=val_eval_loader,
+        proj_intv=proj_intv,
         window_size=window_size,
         n_prediction_steps=n_prediction_steps,
         search_sample_interval=search_sample_interval,
@@ -341,6 +368,7 @@ def main(cfg: omegaconf.DictConfig):
             **trainer_init_kwargs
         )
     epoch_start = 0
+
     if (out_path / 'Model').exists():
         epoch_start = trainer.load(out_path, model=model, w_optimizer=w_optimizer,
                                    a_optimizer=a_optimizer, lr_scheduler_w=lr_scheduler)
@@ -365,6 +393,9 @@ def main(cfg: omegaconf.DictConfig):
                     trainer.save(out_neg, epoch=epoch)
         else:
             break
+    if search_type == 'darts':
+        trainer.pt_project(cfg)
+        trainer.save(out_path, epoch=n_epochs - 1)
 
 
 if __name__ == '__main__':

@@ -104,9 +104,11 @@ class AbstractSearchEncoderCell(nn.Module):
             for j in range(i):
                 node_str = f"{i}<-{j}"
                 if node_str in self.edges:
-                    s_curs.append(edge_output_func(node_str=node_str, x=states[j],
-                                                   w_dag=w_dag, alpha_prune_threshold=alpha_prune_threshold,
-                                                   **kwargs))
+                    edge_out = edge_output_func(node_str=node_str, x=states[j],
+                                                w_dag=w_dag, alpha_prune_threshold=alpha_prune_threshold,
+                                                **kwargs)
+                    if isinstance(edge_out, torch.Tensor):
+                        s_curs.append(edge_out)
             states.append(self.aggregate_edges_outputs(s_curs))
 
         return self.process_output(states)
@@ -141,6 +143,10 @@ class AbstractSearchEncoderCell(nn.Module):
         }
         return meta_info
 
+    def get_output_for_empty(self, x: torch.Tensor):
+        out = torch.zeros_like(x)
+        hx = out[:, [-1]].transpose(0, 1)
+        return [out, hx, hx]
 
 class SearchDARTSEncoderCell(AbstractSearchEncoderCell):
     aggregtrate_type = 'cat'
@@ -177,7 +183,12 @@ class SearchDARTSEncoderCell(AbstractSearchEncoderCell):
                                                            edge_output_func=self.get_edge_out, **kwargs)
 
     def get_edge_out(self, node_str, x, w_dag, alpha_prune_threshold, **kwargs):
-        edge_out = self.edges[node_str](x_past=x, weights=w_dag[self.edge2index[node_str]],
+        weights = w_dag[self.edge2index[node_str]]
+        if torch.all(weights <= alpha_prune_threshold):
+            self.intermediate_outputs[node_str] = self.get_output_for_empty(x)
+            return []
+
+        edge_out = self.edges[node_str](x_past=x, weights=weights,
                                         alpha_prune_threshold=alpha_prune_threshold)
         self.intermediate_outputs[node_str] = edge_out
         return edge_out[0]
@@ -230,6 +241,11 @@ class SearchGDASEncoderCell(AbstractSearchEncoderCell):
     def get_edge_out_gdas(self, node_str, x, w_dag, index, **kwargs):
         edge_idx = self.edge2index[node_str]
         weights = w_dag[edge_idx]
+
+        if torch.all(weights <= 0.0):
+            self.intermediate_outputs[node_str] = self.get_output_for_empty(x)
+            return []
+
         argmaxs = index[edge_idx].item()
         edge = self.edges[node_str]
         edge_out = edge[argmaxs](x_past=x)
@@ -249,6 +265,11 @@ class SearchGDASEncoderCell(AbstractSearchEncoderCell):
 
     def get_edge_out_gdasv1(self, node_str, x, w_dag, index, **kwargs):
         weights = w_dag[self.edge2index[node_str]]
+
+        if torch.all(weights <= 0.0):
+            self.intermediate_outputs[node_str] = self.get_output_for_empty(x)
+            return []
+
         argmaxs = index[self.edge2index[node_str]].item()
         edge_out = self.edges[node_str][argmaxs](x_past=x)
         edge_out = [weights[argmaxs] * out for out in edge_out]
@@ -310,6 +331,11 @@ class SearchGDASEncoderCell(AbstractSearchEncoderCell):
 
     def get_edge_out_select(self, node_str, x, w_dag, index, **kwargs):
         weights = w_dag[self.edge2index[node_str]]
+
+        if torch.all(weights <= 0.0):
+            self.intermediate_outputs[node_str] = self.get_output_for_empty(x)
+            return []
+
         edge_out = self.edges[node_str][weights.argmax().item()](x_past=x)
         self.intermediate_outputs[node_str] = edge_out
         return edge_out[0]
@@ -335,6 +361,7 @@ class SearchGDASEncoderCell(AbstractSearchEncoderCell):
 
 class SearchGDASDecoderCell(SearchGDASEncoderCell):
     op_types = MixedDecoderOps
+
     def get_edge_out_gdas(self, node_str, x, w_dag, index, cell_encoder_output, net_encoder_output, **kwargs):
         weights = w_dag[self.edge2index[node_str]]
         argmaxs = index[self.edge2index[node_str]].item()
@@ -353,6 +380,11 @@ class SearchGDASDecoderCell(SearchGDASEncoderCell):
 
     def get_edge_out_gdasv1(self, node_str, x, w_dag, index, cell_encoder_output, net_encoder_output, **kwargs):
         weights = w_dag[self.edge2index[node_str]]
+
+        if torch.all(weights <= 0.0):
+            self.intermediate_outputs[node_str] = self.get_output_for_empty(x)
+            return []
+
         argmaxs = index[self.edge2index[node_str]].item()
         encoder_out_edge = cell_encoder_output[node_str]
 
@@ -367,6 +399,10 @@ class SearchGDASDecoderCell(SearchGDASEncoderCell):
     def get_edge_out_select(self, node_str, x, w_dag, index, cell_encoder_output, net_encoder_output, **kwargs):
         weights = w_dag[self.edge2index[node_str]]
         encoder_out_edge = cell_encoder_output[node_str]
+
+        if torch.all(weights <= 0.0):
+            self.intermediate_outputs[node_str] = self.get_output_for_empty(x)
+            return []
 
         edge_out = self.edges[node_str][weights.argmax().item()](x_future=x,
                                                                  encoder_output_net=net_encoder_output,
@@ -422,7 +458,9 @@ class SearchDARTSFlatEncoderCell(SearchDARTSEncoderCell):
         self.num_edges = len(self.edges)
 
     def aggregate_edges_outputs(self, s_curs: list[torch.Tensor]):
-        return sum(s_curs) / len(s_curs)
+        if len(s_curs) > 0:
+            return sum(s_curs) / len(s_curs)
+        return 0
 
     def get_edge_out(self, node_str, x, w_dag, alpha_prune_threshold, **kwargs):
         edge_out = self.edges[node_str](x_past=x, weights=w_dag[self.edge2index[node_str]],
@@ -640,7 +678,9 @@ class SampledFlatEncoderCell(SampledEncoderCell):
         }
 
     def aggregate_edges_outputs(self, s_curs: list[torch.Tensor]):
-        return sum(s_curs) / len(s_curs)
+        if len(s_curs) > 0:
+            return sum(s_curs) / len(s_curs)
+        return 0
 
     def get_edge_out(self, node_str, x, **kwargs):
         edge_out = self.edges[node_str](x_past=x)
