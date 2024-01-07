@@ -17,7 +17,7 @@ seq_model:
   model_kwargs:
     tcn:
       kernel_size: 15
-      dialation: 1
+      dilation: 1
 
 
 flat_model:

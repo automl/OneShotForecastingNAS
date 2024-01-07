@@ -13,5 +13,5 @@ backcast_loss_ration: 0.0
 model_kwargs:
   tcn:
     kernel_size: 15
-    dialation: 1
+    dilation: 1
 
