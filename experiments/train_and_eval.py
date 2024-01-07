@@ -163,12 +163,13 @@ def main(cfg: omegaconf.DictConfig):
             'n_cell_input_nodes': int(cfg.model.n_cell_input_nodes),
             'backcast_loss_ration': float(cfg.model.get('backcast_loss_ration', 0.0))
         }
-        ops_kwargs = dict(cfg.model.get('model_kwargs', {}))
+        cfg_model = omegaconf.OmegaConf.to_container(cfg.model, resolve=True)
+        ops_kwargs = cfg_model.get('model_kwargs', {})
         ops_kwargs['mlp_mix'] = {
                                     'forecasting_horizon': n_prediction_steps,
                                     'window_size': window_size,
                                 }
-        heads_kwargs = dict(cfg.model.get('heads_kwargs', {}))
+        heads_kwargs = cfg_model.get('heads_kwargs', {})
         if 'tcn' in ops_kwargs:
             ops_kwargs['tcn'].update(
                 {
@@ -200,8 +201,9 @@ def main(cfg: omegaconf.DictConfig):
             'd_output': d_output,
             'backcast_loss_ration': float(cfg.model.get('backcast_loss_ration', 0.0))
         }
-        ops_kwargs = dict(cfg.model.get('model_kwargs', {}))
-        heads_kwargs = dict(cfg.model.get('heads_kwargs', {}))
+        cfg_model = omegaconf.OmegaConf.to_container(cfg.model, resolve=True)
+        ops_kwargs = cfg_model.get('model_kwargs', {})
+        heads_kwargs = cfg_model.get('heads_kwargs', {})
         net_init_kwargs.update(
             {'window_size': window_size,
              'forecasting_horizon': n_prediction_steps,
@@ -214,8 +216,8 @@ def main(cfg: omegaconf.DictConfig):
     elif model_type.startswith('mixed'):
         if model_type == 'mixed_concat':
             d_input_future = d_input_past
-
-        ops_kwargs_seq = dict(cfg.model.seq_model.get('model_kwargs', {}))
+        cfg_model = omegaconf.OmegaConf.to_container(cfg.model, resolve=True)
+        ops_kwargs_seq = cfg_model['seq_model'].get('model_kwargs', {})
 
         if 'tcn' in ops_kwargs_seq:
             ops_kwargs_seq['tcn'].update(
@@ -231,11 +233,10 @@ def main(cfg: omegaconf.DictConfig):
                     'forecasting_horizon': n_prediction_steps,
                     'window_size': window_size,
                 }
-        heads_kwargs_seq = dict(cfg.model.flat_model.get('head_kwargs', {}))
+        heads_kwargs_seq = cfg_model['flat_model'].get('head_kwargs', {})
 
-        ops_kwargs_flat = dict(cfg.model.flat_model.get('model_kwargs', {}))
-        heads_kwargs_flat = dict(cfg.model.flat_model.get('head_kwargs', {}))
-
+        ops_kwargs_flat = cfg_model['flat_model'].get('model_kwargs', {})
+        heads_kwargs_flat = cfg_model['flat_model'].get('head_kwargs', {})
 
         net_init_kwargs = {
             'd_input_past': d_input_past,
@@ -381,7 +382,6 @@ def main(cfg: omegaconf.DictConfig):
         w_loss = trainer.train_epoch(epoch)
         if epoch in [29, 59, 89, 119, 149]:
             trainer.save(out_path / f'epoch_{epoch}', epoch=epoch)
-
         if not torch.isnan(w_loss):
             trainer.save(out_path, epoch=epoch)
 
