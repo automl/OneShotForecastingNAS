@@ -97,7 +97,7 @@ class AbstractForecastingNetworkController(nn.Module):
         self.mask_decoder = nn.Parameter(torch.zeros_like(self.arch_p_decoder), requires_grad=False)
         self.mask_head = nn.Parameter(torch.zeros_like(self.arch_p_heads), requires_grad=False)
 
-        self.all_masks = ['mask_encoder' 'mask_decoder', 'mask_head']
+        self.all_masks = ['mask_encoder', 'mask_decoder', 'mask_head']
         self.len_all_arch_p = [len(getattr(self, mask)) for mask in self.all_masks]
 
         self.candidate_flags = [True] * sum(self.len_all_arch_p)
@@ -316,6 +316,7 @@ class AbstractForecastingFlatNetworkController(AbstractForecastingNetworkControl
     def __init__(self,
                  window_size: int,
                  forecasting_horizon: int,
+                 d_output: int,
                  n_cells: int,
                  n_nodes: int,
                  n_cell_input_nodes: int,
@@ -328,6 +329,7 @@ class AbstractForecastingFlatNetworkController(AbstractForecastingNetworkControl
                  ):
         self.meta_info = dict(
             window_size=window_size, forecasting_horizon=forecasting_horizon,
+            d_output=d_output,
             OPS_kwargs=OPS_kwargs,
             n_cells=n_cells, n_nodes=n_nodes, n_cell_input_nodes=n_cell_input_nodes,
             PRIMITIVES_encoder=PRIMITIVES_encoder,
@@ -339,11 +341,15 @@ class AbstractForecastingFlatNetworkController(AbstractForecastingNetworkControl
         forecast_only = backcast_loss_ration == 0
 
         self.net = self.net_type(window_size=window_size, forecasting_horizon=forecasting_horizon,
+                                 d_output=d_output,
                                  OPS_kwargs=OPS_kwargs,
                                  n_cells=n_cells, n_nodes=n_nodes, n_cell_input_nodes=n_cell_input_nodes,
                                  PRIMITIVES_encoder=PRIMITIVES_encoder,
                                  HEADs=HEADs, HEADs_kwargs=HEADs_kwargs,
                                  forecast_only=forecast_only)
+
+        self.backcast_loss_ration = backcast_loss_ration
+        self.forecast_only = forecast_only
 
         self.arch_p_encoder = nn.Parameter(1e-3 * torch.randn(self.net.encoder_n_edges, len(PRIMITIVES_encoder)))
         self.arch_p_heads = nn.Parameter(1e-3 * torch.randn(1, len(HEADs)))
@@ -386,6 +392,7 @@ class ForecastingDARTSFlatNetworkController(AbstractForecastingFlatNetworkContro
     def __init__(self,
                  window_size: int,
                  forecasting_horizon: int,
+                 d_output:int,
                  n_cells: int,
                  n_nodes: int,
                  n_cell_input_nodes: int,
@@ -399,6 +406,7 @@ class ForecastingDARTSFlatNetworkController(AbstractForecastingFlatNetworkContro
         AbstractForecastingFlatNetworkController.__init__(self,
                                                           window_size=window_size,
                                                           forecasting_horizon=forecasting_horizon,
+                                                          d_output=d_output,
                                                           n_cells=n_cells, n_nodes=n_nodes,
                                                           n_cell_input_nodes=n_cell_input_nodes,
                                                           PRIMITIVES_encoder=PRIMITIVES_encoder,

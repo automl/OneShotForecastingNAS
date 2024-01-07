@@ -148,6 +148,7 @@ class AbstractSearchEncoderCell(nn.Module):
         hx = out[:, [-1]].transpose(0, 1)
         return [out, hx, hx]
 
+
 class SearchDARTSEncoderCell(AbstractSearchEncoderCell):
     aggregtrate_type = 'cat'
     """Cell for searchs
@@ -433,6 +434,10 @@ class SearchDARTSFlatEncoderCell(SearchDARTSEncoderCell):
         self.OPS_kwargs = OPS_kwargs
         self.is_last_cell = is_last_cell
 
+        self.op_names_all = copy.deepcopy(PRIMITIVES)
+        self.n_ops = len(self.op_names_all)
+
+
         self.edges = nn.ModuleDict()
 
         for i in range(n_input_nodes, self.max_nodes):
@@ -472,7 +477,7 @@ class SearchGDASFlatEncoderCell(SearchDARTSFlatEncoderCell, SearchGDASEncoderCel
     op_types = MixedFlatEncoderOps
 
     def forward_gdas(self, s_previous: list[torch.Tensor], w_dag: list[list[float]], index, **kwargs):
-        return SearchGDASEncoderCell.forward(s_previous=s_previous,
+        return SearchGDASEncoderCell.forward(self, s_previous=s_previous,
                                              w_dag=w_dag, index=index,
                                              edge_output_func=self.get_edge_out_gdas,
                                              **kwargs

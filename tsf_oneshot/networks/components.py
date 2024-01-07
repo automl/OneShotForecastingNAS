@@ -328,7 +328,7 @@ class SearchGDASFlatEncoder(SearchDARTSFlatEncoder):
         cell_out = None
         hardwts, index = w_dag
         for cell in self.cells:
-            cell_out = cell(s_previous=states, w_dag=hardwts, index=index, )
+            cell_out = cell.forward_gdas(s_previous=states, w_dag=hardwts, index=index, )
             states = [*states[1:], cell_out]
         return cell_out
 
