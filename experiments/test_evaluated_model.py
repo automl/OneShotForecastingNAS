@@ -41,7 +41,7 @@ def get_optimized_archs(saved_data_info: dict[str, torch.Tensor], key: str, mask
     else:
         mask = mask.cpu()
         archp = (saved_data_info[key].cpu() + mask).argmax(-1).tolist()
-        has_edges = torch.isinf(mask).all(1).tolist()
+        has_edges = (~torch.isinf(mask).all(1)).tolist()
     return archp, has_edges
 
 
@@ -146,7 +146,7 @@ def main(cfg: omegaconf.DictConfig):
         ops_kwargs['mlp_mix'] = {
                                     'forecasting_horizon': dataset.n_prediction_steps,
                                     'window_size': window_size,
-                                },
+                                }
         heads_kwargs = cfg_model.get('heads_kwargs', {})
 
         head_idx = head_idx[0]
@@ -222,7 +222,6 @@ def main(cfg: omegaconf.DictConfig):
         cfg_model = omegaconf.OmegaConf.to_container(cfg.model, resolve=True)
 
         ops_kwargs_seq = cfg_model['seq_model'].get('model_kwargs', {})
-
 
         ops_kwargs_seq['mlp_mix'] = {
                     'forecasting_horizon': dataset.n_prediction_steps,
