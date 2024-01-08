@@ -149,7 +149,7 @@ def main(cfg: omegaconf.DictConfig):
                                 },
         heads_kwargs = cfg_model.get('heads_kwargs', {})
 
-        head_idx = head_idx[0].item()
+        head_idx = head_idx[0]
         HEAD = list(cfg.model.HEADs)[head_idx]
         net_init_kwargs = {
             'd_input_past': d_input_past,
@@ -177,7 +177,7 @@ def main(cfg: omegaconf.DictConfig):
         del saved_data_info
         torch.cuda.empty_cache()
 
-        head_idx = head_idx[0].item()
+        head_idx = head_idx[0]
         HEAD = list(cfg.model.HEADs)[head_idx]
 
         cfg_model = omegaconf.OmegaConf.to_container(cfg.model, resolve=True)
