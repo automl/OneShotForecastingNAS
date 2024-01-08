@@ -41,9 +41,10 @@ train:
 
 w_optimizer:
   type: 'sgd'
-  lr: 1e-3
+  lr: 0.025
   weight_decay: 5e-4
   momentum: 0.9
+  nesterov: true
 
 a_optimizer_type: 'adam'
 a_optimizer:
@@ -53,8 +54,8 @@ a_optimizer:
   beta1: 0.5
   beta2: 0.999
 
-lr_scheduler_type: 'CosineAnnealingWarmRestarts'
 lr_scheduler:
+  type: 'CosineAnnealingWarmRestarts'
   T_0: 10
   T_mult: 1
   eta_min: 1e-6

@@ -1,5 +1,5 @@
 type: LTSF
-name: "etth1_720"
+name: "ETTh1_720"
 file_name: ETT-small/ETTh1.csv
 series_type: "M"
 freq: "1H"

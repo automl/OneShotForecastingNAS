@@ -1,5 +1,5 @@
 type: LTSF
-name: "ettm1_96"
+name: "ETTm1_96"
 file_name: ETT-small/ETTm1.csv
 series_type: "M"
 freq: "15min"

@@ -160,7 +160,7 @@ def get_dataloader(dataset: TimeSeriesForecastingDataset,
                    batch_size: int,
                    window_size: int,
                    num_workers: int = 0,
-                   num_batches_per_epoch: int | None = 100,
+                   num_batches_per_epoch: int | None = None,
                    is_test_sets: list[int] | None = None,
                    padding_value: float = 0.0,
                    batch_size_test: int | None = None,
@@ -184,13 +184,15 @@ def get_dataloader(dataset: TimeSeriesForecastingDataset,
         assert len(is_test_sets) == len(splits)
     for is_test, split in zip(is_test_sets, splits):
         sub_dataset = TransformSubset(dataset=dataset, indices=split, train=True)
+        if num_batches_per_epoch is not None and len(split) < num_batches_per_epoch * batch_size:
+            num_batches_per_epoch = None
         if num_batches_per_epoch is None or is_test:
             if batch_size_test is None:
                 batch_size_test = batch_size
             data_loader = torch.utils.data.DataLoader(
                 sub_dataset,
                 batch_size=batch_size_test,
-                shuffle=True,
+                shuffle= ~is_test,
                 num_workers=num_workers,
                 pin_memory=True,
                 drop_last=True,

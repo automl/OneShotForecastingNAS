@@ -16,6 +16,7 @@ from datasets.get_data_loader import get_forecasting_dataset, get_dataloader, re
 
 from tsf_oneshot.training.samplednet_trainer import SampledForecastingNetTrainer
 from tsf_oneshot.networks.sampled_net import SampledNet, SampledFlatNet, MixedParallelSampledNet, MixedConcatSampledNet
+from tsf_oneshot.training.utils import get_optimizer, get_lr_scheduler
 
 import torch.multiprocessing
 
@@ -150,6 +151,7 @@ def main(cfg: omegaconf.DictConfig):
         heads_kwargs = cfg_model.get('heads_kwargs', {})
 
         head_idx = head_idx[0]
+
         HEAD = list(cfg.model.HEADs)[head_idx]
         net_init_kwargs = {
             'd_input_past': d_input_past,
@@ -157,7 +159,7 @@ def main(cfg: omegaconf.DictConfig):
             'd_input_future': d_input_future,
             'd_model': int(cfg.model.d_model),
             'd_output': d_output,
-            'n_cells': int(cfg.model.n_cells) * 2,
+            'n_cells': int(cfg.model.n_cells),
             'n_nodes': int(cfg.model.n_nodes),
             'operations_encoder': operations_encoder,
             'has_edges_encoder': has_edges_encoder,
@@ -190,7 +192,7 @@ def main(cfg: omegaconf.DictConfig):
             forecasting_horizon=dataset.n_prediction_steps,
             d_output=d_output,
             OPS_kwargs=ops_kwargs,
-            n_cells=int(cfg.model.n_cells) * 2,
+            n_cells=int(cfg.model.n_cells),
             n_nodes=int(cfg.model.n_nodes),
             operations_encoder=operations_encoder,
             has_edges_encoder=has_edges_encoder,
@@ -216,7 +218,6 @@ def main(cfg: omegaconf.DictConfig):
         del saved_data_info
 
         head_idx = head[0]
-
         HEAD = list(cfg.model.HEADs)[head_idx]
 
         cfg_model = omegaconf.OmegaConf.to_container(cfg.model, resolve=True)
@@ -273,36 +274,11 @@ def main(cfg: omegaconf.DictConfig):
         raise NotImplementedError
 
     w_optim_groups = model.get_weight_optimizer_parameters(cfg.w_optimizer.weight_decay)
+    w_optimizer = get_optimizer(cfg_optimizer=cfg.w_optimizer, optim_groups=w_optim_groups, wd_in_p_groups=True)
 
-    if cfg.w_optimizer.type == 'adamw':
-        w_optimizer = torch.optim.AdamW(
-            params=w_optim_groups,
-            lr=cfg.w_optimizer.lr,
-            betas=(cfg.w_optimizer.beta1, cfg.w_optimizer.beta2),
-        )
-    elif cfg.w_optimizer.type == 'sgd':
-        w_optimizer = torch.optim.SGD(
-            params=w_optim_groups,
-            lr=cfg.w_optimizer.lr,
-            momentum=cfg.w_optimizer.momentum,
-        )
-    elif cfg.w_optimizer.type == 'adam':
-        w_optimizer = torch.optim.Adam(
-            params=w_optim_groups,
-            lr=cfg.w_optimizer.lr,
-            betas=(cfg.w_optimizer.beta1, cfg.w_optimizer.beta2),
-        )
-
-    else:
-        raise NotImplementedError
-
-    if cfg.lr_scheduler_type == 'CosineAnnealingWarmRestarts':
-        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            optimizer=w_optimizer,
-            **cfg.lr_scheduler
-        )
-    else:
-        raise NotImplementedError
+    lr_scheduler = get_lr_scheduler(optimizer=w_optimizer, cfg_lr_scheduler=cfg.lr_scheduler,
+                                    steps_per_epoch=len(train_data_loader),
+                                    )
 
     target_scaler = TargetScaler(cfg.train.targe_scaler)
 

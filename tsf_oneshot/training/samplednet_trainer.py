@@ -15,6 +15,7 @@ from torch import nn
 from tsf_oneshot.networks.sampled_net import SampledNet
 from tsf_oneshot.training.training_utils import scale_value, rescale_output
 from tsf_oneshot.training.trainer import pad_tensor
+from tsf_oneshot.training.utils import LR_SCHEDULER_TYPE
 
 
 def save_images(batch_idx, var_idx, kwargs):
@@ -96,6 +97,11 @@ class SampledForecastingNetTrainer:
 
         self.lr_scheduler_w = lr_scheduler_w
 
+        if isinstance(self.lr_scheduler_w, torch.optim.lr_scheduler.OneCycleLR):
+            self.lr_scheduler_type = LR_SCHEDULER_TYPE.batch
+        else:
+            self.lr_scheduler_type = LR_SCHEDULER_TYPE.epoch
+
         self.grad_clip = grad_clip
         self.amp_enable = amp_enable
         self.scaler = torch.cuda.amp.GradScaler(enabled=amp_enable)
@@ -164,8 +170,6 @@ class SampledForecastingNetTrainer:
         return x_past, x_future, (loc, scale)
 
     def train_epoch(self, epoch: int):
-        if self.lr_scheduler_w is not None:
-            self.lr_scheduler_w.step()
 
         # train model
         #"""
@@ -179,6 +183,10 @@ class SampledForecastingNetTrainer:
 
         val_res = self.evaluate(self.val_loader, epoch, 'val')
         eval_res = self.evaluate(self.test_loader, epoch, 'test')
+
+        if self.lr_scheduler_w is not None and self.lr_scheduler_type == LR_SCHEDULER_TYPE.epoch:
+            self.lr_scheduler_w.step()
+
         return eval_res
         #"""
 
@@ -254,6 +262,8 @@ class SampledForecastingNetTrainer:
                 'prediction_val': prediction_test,
             }
             func = partial(save_images, kwargs=kwargs)
+            import pdb
+            pdb.set_trace()
 
     def update_weights(self, train_X, train_y):
         x_past_train, x_future_train, scale_value_train = self.preprocessing(train_X)
@@ -294,6 +304,10 @@ class SampledForecastingNetTrainer:
             wandb.log({'gradient_norm_weights': gradient_norm})
         self.scaler.step(self.w_optimizer)
         self.scaler.update()
+
+        if self.lr_scheduler_w is not None and self.lr_scheduler_type == LR_SCHEDULER_TYPE.batch:
+            self.lr_scheduler_w.step()
+
         return w_loss, prediction
 
     def save(self, save_path: Path, epoch: int):

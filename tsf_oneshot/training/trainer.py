@@ -23,7 +23,7 @@ from torch import nn
 import torch
 import numpy as np
 from tsf_oneshot.training.training_utils import scale_value, rescale_output
-from tsf_oneshot.training.utils import get_optimizer
+from tsf_oneshot.training.utils import get_optimizer, LR_SCHEDULER_TYPE
 
 
 def save_images(batch_idx, var_idx, kwargs):
@@ -135,6 +135,16 @@ class ForecastingTrainer:
         self.lr_scheduler_w = lr_scheduler_w
         self.lr_scheduler_a = lr_scheduler_a
 
+        if isinstance(self.lr_scheduler_w, torch.optim.lr_scheduler.OneCycleLR):
+            self.lr_scheduler_w_type = LR_SCHEDULER_TYPE.batch
+        else:
+            self.lr_scheduler_w_type = LR_SCHEDULER_TYPE.epoch
+
+        if isinstance(self.lr_scheduler_a, torch.optim.lr_scheduler.OneCycleLR):
+            self.lr_scheduler_a_type = LR_SCHEDULER_TYPE.batch
+        else:
+            self.lr_scheduler_a_type = LR_SCHEDULER_TYPE.epoch
+
         self.grad_clip = grad_clip
         self.amp_enable = amp_enable
         self.scaler = torch.cuda.amp.GradScaler(enabled=amp_enable)
@@ -203,10 +213,6 @@ class ForecastingTrainer:
         return x_past, x_future[:, self.target_indices], (loc, scale)
 
     def train_epoch(self, epoch: int):
-        if self.lr_scheduler_w is not None:
-            self.lr_scheduler_w.step()
-        if self.lr_scheduler_a is not None:
-            self.lr_scheduler_a.step()
         self.model.train()
 
         for (train_X, train_y), (val_X, val_y) in tzip(self.train_loader, self.val_loader):
@@ -235,6 +241,10 @@ class ForecastingTrainer:
             import pdb
             pdb.set_trace()
             #"""
+        if self.lr_scheduler_w is not None and self.lr_scheduler_w_type == LR_SCHEDULER_TYPE.epoch:
+            self.lr_scheduler_w.step()
+        if self.lr_scheduler_a is not None and self.lr_scheduler_a_type == LR_SCHEDULER_TYPE.epoch:
+            self.lr_scheduler_a.step()
 
         return w_loss.detach().cpu()
 
@@ -298,6 +308,9 @@ class ForecastingTrainer:
 
         self.w_optimizer.zero_grad()
 
+        if self.lr_scheduler_w is not None and self.lr_scheduler_w_type == LR_SCHEDULER_TYPE.epoch:
+            self.lr_scheduler_w.step()
+
         return w_loss, prediction
 
     def update_alphas(self, val_X, val_y):
@@ -341,6 +354,9 @@ class ForecastingTrainer:
         self.scaler.step(self.a_optimizer)
         self.scaler.update()
         self.a_optimizer.zero_grad()
+
+        if self.lr_scheduler_a is not None and self.lr_scheduler_a_type == LR_SCHEDULER_TYPE.epoch:
+            self.lr_scheduler_a.step()
 
         return a_loss, prediction
 
