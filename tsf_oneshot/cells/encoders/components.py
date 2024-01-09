@@ -35,9 +35,10 @@ class LSTMEncoderModule(nn.Module):
 
 
 class TransformerEncoderModule(nn.Module):
-    def __init__(self, d_model: int, nhead: int = 8, activation='gelu', is_casual_model: bool = False, is_first_layer: bool=False):
+    def __init__(self, d_model: int, nhead: int = 8, activation='gelu', dropout:float=0.2, is_casual_model: bool = False, is_first_layer: bool=False):
         super(TransformerEncoderModule, self).__init__()
         self.cell = nn.TransformerEncoderLayer(d_model, nhead=nhead, dim_feedforward=4 * d_model, batch_first=True,
+                                               dropout=dropout,
                                                activation=activation)
         self.is_casual_model: bool = is_casual_model
         self.hx_encoder_layer = nn.Linear(d_model, d_model)
@@ -109,7 +110,7 @@ class TCNEncoderModule(nn.Module):
 
 class MLPMixEncoderModule(nn.Module):
     # https://arxiv.org/pdf/2303.06053.pdf
-    def __init__(self, d_model: int, window_size: int, dropout: float = 0.1, forecasting_horizon: int=0):
+    def __init__(self, d_model: int, window_size: int, dropout: float = 0.2, forecasting_horizon: int=0):
         super(MLPMixEncoderModule, self).__init__()
         self.time_mixer = nn.Sequential(
             nn.Linear(window_size, window_size),

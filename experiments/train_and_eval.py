@@ -8,6 +8,7 @@ import omegaconf
 import torch
 import wandb
 
+from autoPyTorch.datasets.time_series_dataset import get_lags_for_frequency
 from autoPyTorch.pipeline.components.setup.forecasting_target_scaling.utils import TargetScaler
 from datasets import get_LTSF_dataset, get_monash_dataset
 from datasets.get_data_loader import get_forecasting_dataset, get_dataloader, regenerate_splits
@@ -27,6 +28,7 @@ from tsf_oneshot.cells.encoders.components import TCN_DEFAULT_KERNEL_SIZE
 
 from tsf_oneshot.training.trainer import ForecastingTrainer, ForecastingDARTSSecondOrderTrainer
 from tsf_oneshot.training.utils import get_optimizer
+from tsf_oneshot.training.utils import get_optimizer, get_lr_scheduler
 
 
 def seed_everything(seed: int):
@@ -73,14 +75,24 @@ def main(cfg: omegaconf.DictConfig):
                                                                      'external_forecast_horizon', None)
                                                                  )
     elif dataset_type == 'LTSF':
-        data_info = get_LTSF_dataset.get_train_dataset(dataset_root_path, dataset_name=dataset_name,
-                                                       file_name=cfg.benchmark.file_name,
-                                                       series_type=cfg.benchmark.series_type,
-                                                       do_normalization=cfg.benchmark.do_normalization,
-                                                       forecasting_horizon=cfg.benchmark.external_forecast_horizon,
-                                                       make_dataset_uni_variant=cfg.benchmark.get(
-                                                           "make_dataset_uni_variant", False),
-                                                       flag='train')
+        if cfg.model.get('select_with_pt', False):
+            data_info, border2 = get_LTSF_dataset.get_train_dataset(dataset_root_path, dataset_name=dataset_name,
+                                                           file_name=cfg.benchmark.file_name,
+                                                           series_type=cfg.benchmark.series_type,
+                                                           do_normalization=cfg.benchmark.do_normalization,
+                                                           forecasting_horizon=cfg.benchmark.external_forecast_horizon,
+                                                           make_dataset_uni_variant=cfg.benchmark.get(
+                                                               "make_dataset_uni_variant", False),
+                                                           flag='train')
+        else:
+            data_info, border2 = get_LTSF_dataset.get_train_dataset(dataset_root_path, dataset_name=dataset_name,
+                                                           file_name=cfg.benchmark.file_name,
+                                                           series_type=cfg.benchmark.series_type,
+                                                           do_normalization=cfg.benchmark.do_normalization,
+                                                           forecasting_horizon=cfg.benchmark.external_forecast_horizon,
+                                                           make_dataset_uni_variant=cfg.benchmark.get(
+                                                               "make_dataset_uni_variant", False),
+                                                           flag='train_val')
     else:
         raise NotImplementedError
 
@@ -102,7 +114,7 @@ def main(cfg: omegaconf.DictConfig):
 
     window_size = int(cfg.benchmark.dataloader.window_size)
     start_idx = window_size + max(dataset.lagged_value)
-    splits_new = regenerate_splits(dataset, val_share=val_share, start_idx=start_idx, strategy='cv')
+    splits_new = regenerate_splits(dataset, val_share=val_share, start_idx=start_idx, strategy='holdout')
 
     # indices = np.arange(start_idx, len(dataset))
 
@@ -129,9 +141,24 @@ def main(cfg: omegaconf.DictConfig):
     if cfg.model.get('select_with_pt', False):
         # if we would like to select architectures with perturbation: https://openreview.net/pdf?id=PKubaeJkw3
         # we need to have another validation set to determine which edge and architectures performances best
-        split_val_pt_size = regenerate_splits(dataset, val_share=0.1, start_idx=start_idx, strategy='holdout')[-1]
+        data_info, split_begin, split_end, (border1s, border2s) = get_LTSF_dataset.get_test_dataset(dataset_root_path,
+                                                                                                    dataset_name=dataset_name,
+                                                                                                    file_name=cfg.benchmark.file_name,
+                                                                                                    series_type=cfg.benchmark.series_type,
+                                                                                                    do_normalization=cfg.benchmark.do_normalization,
+                                                                                                    forecasting_horizon=cfg.benchmark.external_forecast_horizon,
+                                                                                                    make_dataset_uni_variant=cfg.benchmark.get(
+                                                                                                        "make_dataset_uni_variant",
+                                                                                                        False),
+                                                                                                    flag='train_val')
+        split_val_pt = [
+            np.arange(border1s[1], border2s[1] - dataset.n_prediction_steps),
+        ]
+        dataset_val = get_forecasting_dataset(dataset_name=dataset_name, **data_info)
+        dataset_val.lagged_value = [0]  # + get_lags_for_frequency(dataset.freq, num_default_lags=1)
+
         val_eval_loader = get_dataloader(
-            dataset=dataset, splits=[split_val_pt_size], batch_size=batch_size,
+            dataset=dataset_val, splits=[split_val_pt], batch_size=batch_size,
             num_batches_per_epoch=None,
             is_test_sets=[True],
             window_size=window_size,
@@ -143,6 +170,7 @@ def main(cfg: omegaconf.DictConfig):
     else:
         proj_intv = 1
         val_eval_loader = None
+
 
     # we need to adjust the values to initialize our networks
     window_size = (window_size - 1) // search_sample_interval + 1
@@ -330,13 +358,9 @@ def main(cfg: omegaconf.DictConfig):
     a_optimizer = get_optimizer(cfg_optimizer=cfg.a_optimizer, optim_groups=model.arch_parameters(),
                                 wd_in_p_groups=False)
 
-    if cfg.lr_scheduler_type == 'CosineAnnealingWarmRestarts':
-        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            optimizer=w_optimizer,
-            **cfg.lr_scheduler
-        )
-    else:
-        raise NotImplementedError
+    lr_scheduler = get_lr_scheduler(optimizer=w_optimizer, cfg_lr_scheduler=cfg.lr_scheduler,
+                                    steps_per_epoch=len(train_data_loader),
+                                    )
 
     target_scaler = TargetScaler(cfg.train.targe_scaler)
 

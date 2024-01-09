@@ -10,7 +10,7 @@ from autoPyTorch.pipeline.components.setup.network_head.forecasting_network_head
 
 
 class MLPFlatModule(nn.Module):
-    def __init__(self, window_size: int, forecasting_horizon: int,  dropout: float = 0.1,
+    def __init__(self, window_size: int, forecasting_horizon: int,  dropout: float = 0.2,
                  is_last_layer: bool = False, norm_type='ln'):
         super(MLPFlatModule, self).__init__()
         if norm_type == 'ln':
@@ -35,15 +35,12 @@ class MLPFlatModule(nn.Module):
         # here x_past should be the concatenation of x_past + x_future
         return torch.cat([x_past[:, :self.window_size], self.net(x_past)], -1)
 
-    def forward(self, x_past: torch.Tensor, **kwargs):
-        # here x_past should be the concatenation of x_past + x_future
-        return torch.cat([x_past[:, :self.window_size], self.net(x_past)], -1)
 
 class NBEATSModule(nn.Module):
     def __init__(self, window_size: int,
                  forecasting_horizon: int,
-                 dropout: float = 0.1,
-                 width=512, num_layers: int = 2, thetas_dim: int = 256,
+                 dropout: float = 0.2,
+                 width=64, num_layers: int = 2, thetas_dim: int = 32,
                  stack_type: str = 't',
                  norm_type='ln'):
         super(NBEATSModule, self).__init__()

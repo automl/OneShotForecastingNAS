@@ -10,6 +10,7 @@ import omegaconf
 import torch
 import wandb
 
+from autoPyTorch.datasets.time_series_dataset import get_lags_for_frequency
 from autoPyTorch.pipeline.components.setup.forecasting_target_scaling.utils import TargetScaler
 from datasets import get_LTSF_dataset, get_monash_dataset
 from datasets.get_data_loader import get_forecasting_dataset, get_dataloader, regenerate_splits
@@ -94,7 +95,7 @@ def main(cfg: omegaconf.DictConfig):
         raise NotImplementedError
 
     dataset = get_forecasting_dataset(dataset_name=dataset_name, **data_info)
-    dataset.lagged_value = [0]  # + get_lags_for_frequency(dataset.freq, num_default_lags=1)
+    dataset.lagged_value = [0] # + get_lags_for_frequency(dataset.freq, num_default_lags=1)
     """
     if dataset.freq == '1H' and dataset.n_prediction_steps > 168:
         base_window_size = int(168 * cfg.dataloader.window_size_coefficient)
@@ -113,7 +114,6 @@ def main(cfg: omegaconf.DictConfig):
         np.arange(window_size - 1, border2s[0] - dataset.n_prediction_steps),
         np.arange(border1s[1] - 1, border2s[1] - dataset.n_prediction_steps),
         np.arange(border1s[2] - 1, border2s[2] - dataset.n_prediction_steps),
-
     ]
 
     train_data_loader, val_data_loader, test_data_loader = get_dataloader(
@@ -151,7 +151,6 @@ def main(cfg: omegaconf.DictConfig):
         heads_kwargs = cfg_model.get('heads_kwargs', {})
 
         head_idx = head_idx[0]
-
         HEAD = list(cfg.model.HEADs)[head_idx]
         net_init_kwargs = {
             'd_input_past': d_input_past,
@@ -234,7 +233,7 @@ def main(cfg: omegaconf.DictConfig):
         heads_kwargs_flat = cfg_model['flat_model'].get('head_kwargs', {})
 
         if model_type == 'mixed_concat':
-            d_input_future = d_input_past
+            d_input_future = num_targets + n_time_features
         net_init_kwargs = dict(d_input_past=d_input_past,
                                d_input_future=d_input_future,
                                d_output=d_output,
@@ -272,6 +271,7 @@ def main(cfg: omegaconf.DictConfig):
             model = MixedParallelSampledNet(**net_init_kwargs)
     else:
         raise NotImplementedError
+    n_pars = 0
 
     w_optim_groups = model.get_weight_optimizer_parameters(cfg.w_optimizer.weight_decay)
     w_optimizer = get_optimizer(cfg_optimizer=cfg.w_optimizer, optim_groups=w_optim_groups, wd_in_p_groups=True)
@@ -299,8 +299,8 @@ def main(cfg: omegaconf.DictConfig):
     )
 
     epoch_start = 0
-    if (out_path / 'SampledNet' / 'Model').exists():
-        epoch_start = trainer.load(out_path, model=model, w_optimizer=w_optimizer, lr_scheduler_w=lr_scheduler)
+    #if (out_path / 'SampledNet' / 'Model').exists():
+    #    epoch_start = trainer.load(out_path, model=model, w_optimizer=w_optimizer, lr_scheduler_w=lr_scheduler)
     for epoch in range(epoch_start, cfg.train.n_epochs):
         eval_res = trainer.train_epoch(epoch)
         trainer.save(out_path, epoch=epoch)

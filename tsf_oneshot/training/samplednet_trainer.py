@@ -181,6 +181,8 @@ class SampledForecastingNetTrainer:
             w_loss, _ = self.update_weights(train_X, train_y)
             torch.cuda.empty_cache()
 
+        train_res = self.evaluate(self.train_loader, epoch, 'train')
+
         val_res = self.evaluate(self.val_loader, epoch, 'val')
         eval_res = self.evaluate(self.test_loader, epoch, 'test')
 
@@ -196,13 +198,13 @@ class SampledForecastingNetTrainer:
         mse_losses = []
         mae_losses = []
         num_data_points = 0
+        self.model.eval()
 
         for (test_X, test_y) in tqdm(test_loader):
             x_past_test, x_future_test, scale_value_test = self.preprocessing(test_X)
             target_test = test_y['future_targets'].float()
             n_data = len(target_test)
 
-            self.model.eval()
             with torch.no_grad():
                 prediction_test = self.model(x_past_test, x_future_test)
                 prediction_test = self.model.get_inference_prediction(prediction_test)
@@ -229,12 +231,12 @@ class SampledForecastingNetTrainer:
         }
 
     def evaluate_with_plot(self):
+        self.model.eval()
         for (test_X, test_y) in tqdm(self.test_loader):
             x_past_test, x_future_test, scale_value_test = self.preprocessing(test_X)
             target_test = test_y['future_targets'].float()
             n_data = len(target_test)
 
-            self.model.eval()
             with torch.no_grad():
                 prediction_test = self.model(x_past_test, x_future_test)
                 prediction_test = self.model.get_inference_prediction(prediction_test)
@@ -262,8 +264,6 @@ class SampledForecastingNetTrainer:
                 'prediction_val': prediction_test,
             }
             func = partial(save_images, kwargs=kwargs)
-            import pdb
-            pdb.set_trace()
 
     def update_weights(self, train_X, train_y):
         x_past_train, x_future_train, scale_value_train = self.preprocessing(train_X)

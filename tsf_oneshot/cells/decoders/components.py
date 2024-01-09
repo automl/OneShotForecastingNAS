@@ -53,9 +53,9 @@ class LSTMDecoderModule(ForecastingDecoderLayer):
 
 
 class TransformerDecoderModule(ForecastingDecoderLayer):
-    def __init__(self, d_model: int, nhead: int = 8, activation='gelu',is_first_layer: bool = False):
+    def __init__(self, d_model: int, nhead: int = 8, activation='gelu', dropout:float=0.2, is_first_layer: bool = False):
         super(TransformerDecoderModule, self).__init__()
-        self.cell = nn.TransformerDecoderLayer(d_model, nhead=nhead, dim_feedforward=4 * d_model, batch_first=True, activation=activation)
+        self.cell = nn.TransformerDecoderLayer(d_model, nhead=nhead, dim_feedforward=4 * d_model,dropout=dropout, batch_first=True, activation=activation)
         self.is_first_layer = is_first_layer
         if self.is_first_layer:
             self.ps_encoding = PositionalEncoding(d_model=d_model)
@@ -73,7 +73,7 @@ class TransformerDecoderModule(ForecastingDecoderLayer):
 class TCNDecoderModule(ForecastingDecoderLayer):
     def __init__(self, d_model: int,
                  kernel_size: int = TCN_DEFAULT_KERNEL_SIZE,
-                 stride: int = 1, dilation: int = 1, dropout: float = 0.1):
+                 stride: int = 1, dilation: int = 1, dropout: float = 0.2):
         super(TCNDecoderModule, self).__init__()
         padding = (kernel_size - 1) * dilation
         self.conv1 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,
@@ -115,7 +115,7 @@ class MLPMixDecoderModule(ForecastingDecoderLayer):
                  d_model: int,
                  window_size: int,
                  forecasting_horizon: int,
-                 dropout: float=0.1
+                 dropout: float=0.2
                  ):
         super(MLPMixDecoderModule, self).__init__()
         self.forecasting_horizon = forecasting_horizon

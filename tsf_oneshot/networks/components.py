@@ -24,7 +24,7 @@ class EmbeddingLayer(nn.Module):
     # https://github.com/cure-lab/LTSF-Linear/blob/main/layers/Embed.py
     def __init__(self, c_in, d_model, kernel_size=3):
         super(EmbeddingLayer, self).__init__()
-        #"""
+        """
         padding = (kernel_size - 1)
         self.tokenConv = nn.Conv1d(in_channels=c_in,
                                    out_channels=d_model,
@@ -32,14 +32,14 @@ class EmbeddingLayer(nn.Module):
                                    bias=False
                                    )
         self.chomp1 = _Chomp1d(padding)
-        #"""
-        #self.embedding = nn.Linear(
-        #    c_in, d_model, bias=False
-        #)
+        """
+        self.embedding = nn.Linear(
+            c_in, d_model, bias=False
+        )
 
     def forward(self, x_past: torch.Tensor):
-        return self.chomp1(self.tokenConv(x_past.permute(0, 2, 1))).transpose(1, 2)
-        #return self.embedding(x_past)
+        #return self.chomp1(self.tokenConv(x_past.permute(0, 2, 1))).transpose(1, 2)
+        return self.embedding(x_past)
 
 
 class AbstractSearchEncoder(nn.Module):

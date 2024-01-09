@@ -536,7 +536,6 @@ class MixedConcatSampledNet(AbstractMixedSampledNet):
     def validate_input_kwargs(self, kwargs):
         kwargs = super().validate_input_kwargs(kwargs)
         kwargs['forecast_only_flat'] = False
-        assert kwargs['d_input_future'] == kwargs['d_input_past']
         return kwargs
 
     @staticmethod

@@ -60,7 +60,7 @@ def forward_concat_net(flat_net: nn.Module,
                        flat_kwargs: dict = {}):
     flat_out = flat_net(x_past, x_future, **flat_kwargs, forward_only_with_net=True)
     backcast_flat_out, forecast_flat_out = flat_out
-    # x_past[:,:, :self.d_output] = backcast_flat_out
+    # x_past[:,:, :backcast_flat_out.shape[-1]] = backcast_flat_out
     x_future = torch.cat([forecast_flat_out, x_future], dim=-1)
     seq_out = seq_net(x_past, x_future, **seq_kwargs)
     if forecast_only_flat:
