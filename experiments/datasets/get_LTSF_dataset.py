@@ -61,6 +61,9 @@ def get_ltsf_dataset(root_path,
         border2 = border1s[2]
     elif flag == 'train':
         border2 = border1s[1]
+    elif flag == 'test':
+        set_type = type_map[flag]
+        border2 = border1s[set_type]
     else:
         raise NotImplementedError
 
