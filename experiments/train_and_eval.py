@@ -81,6 +81,7 @@ def main(cfg: omegaconf.DictConfig):
                                                            series_type=cfg.benchmark.series_type,
                                                            do_normalization=cfg.benchmark.do_normalization,
                                                            forecasting_horizon=cfg.benchmark.external_forecast_horizon,
+                                                           forecasting_horizon=cfg.benchmark.external_forecast_horizon,
                                                            make_dataset_uni_variant=cfg.benchmark.get(
                                                                "make_dataset_uni_variant", False),
                                                            flag='train')
@@ -97,7 +98,7 @@ def main(cfg: omegaconf.DictConfig):
         raise NotImplementedError
 
     dataset = get_forecasting_dataset(dataset_name=dataset_name, **data_info)
-    dataset.lagged_value = [0] + get_lags_for_frequency(dataset.freq, num_default_lags=1)
+    dataset.lagged_value = [0] # + get_lags_for_frequency(dataset.freq, num_default_lags=1)
 
     val_share: float = cfg.val_share
     """
