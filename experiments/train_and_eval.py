@@ -81,7 +81,6 @@ def main(cfg: omegaconf.DictConfig):
                                                            series_type=cfg.benchmark.series_type,
                                                            do_normalization=cfg.benchmark.do_normalization,
                                                            forecasting_horizon=cfg.benchmark.external_forecast_horizon,
-                                                           forecasting_horizon=cfg.benchmark.external_forecast_horizon,
                                                            make_dataset_uni_variant=cfg.benchmark.get(
                                                                "make_dataset_uni_variant", False),
                                                            flag='train')
