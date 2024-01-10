@@ -7,30 +7,54 @@ from torch.nn.utils import weight_norm
 from autoPyTorch.pipeline.components.setup.network_backbone.forecasting_backbone.components_util import \
     PositionalEncoding
 
-TCN_DEFAULT_KERNEL_SIZE=15
+TCN_DEFAULT_KERNEL_SIZE=7
 
 
 class GRUEncoderModule(nn.Module):
-    def __init__(self, d_model: int, bias: bool = True):
+    def __init__(self, d_model: int, bias: bool = True, bidirectional: bool=False):
         super(GRUEncoderModule, self).__init__()
-        self.cell = nn.GRU(input_size=d_model, hidden_size=d_model, bias=bias, num_layers=1, batch_first=True)
-        self.hx_encoder_layer = nn.Linear(d_model, d_model)
         self.norm = nn.LayerNorm(d_model)
+        if bidirectional:
+            assert d_model % 2 == 0
+            d_model = d_model / 2
+        self.cell = nn.GRU(input_size=d_model, hidden_size=d_model, bias=bias, num_layers=1,
+                           batch_first=True, bidirectional=bidirectional)
+        self.hx_encoder_layer = nn.Linear(d_model, d_model)
+        self.bidirectional = bidirectional
+        self.d_model = d_model
 
     def forward(self, x_past: torch.Tensor, hx: Tuple[torch.Tensor] | None = None):
         output, hx = self.cell(x_past, hx)
-
+        if self.bidirectional:
+            # we ask the output to be
+            output = torch.cat([output[:, :, :self.d_model], torch.flip(output[:,:,:self.d_model], dims=(1,)), -1])
+            hx = torch.cat([hx[:self.num_layers, :, :], torch.flip(hx[self.num_layers:, :, :], dims=(1,))], -1)
         return self.norm(output), hx, self.hx_encoder_layer(hx)
 
 
+
 class LSTMEncoderModule(nn.Module):
-    def __init__(self, d_model: int, bias: bool = True):
+    def __init__(self, d_model: int, bias: bool = True, bidirectional: bool=False):
         super(LSTMEncoderModule, self).__init__()
-        self.cell = nn.LSTM(input_size=d_model, hidden_size=d_model, bias=bias, num_layers=1, batch_first=True)
         self.norm = nn.LayerNorm(d_model)
+        if bidirectional:
+            assert d_model % 2 == 0
+            d_model = d_model / 2
+
+        self.cell = nn.LSTM(input_size=d_model, hidden_size=d_model, bias=bias, num_layers=1, batch_first=True,
+                            bidirectional=bidirectional)
+        self.bidirectional = bidirectional
+        self.d_model = d_model
 
     def forward(self, x_past: torch.Tensor, hx: Tuple[torch.Tensor] | None = None):
         output, hx = self.cell(x_past, hx)
+        if self.bidirectional:
+            output = torch.cat([output[:, :, :self.d_model], torch.flip(output[:, :, :self.d_model], dims=(1,)), -1])
+            hx = (
+                torch.cat([hx[0][:self.num_layers, :, :], torch.flip(hx[0][self.num_layers:, :, :], dims=(1,))], -1),
+                torch.cat([hx[1][:self.num_layers, :, :], torch.flip(hx[1][self.num_layers:, :, :], dims=(1,))], -1),
+            )
+
         return self.norm(output), *hx
 
 

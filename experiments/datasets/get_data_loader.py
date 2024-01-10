@@ -46,11 +46,25 @@ def get_forecasting_dataset(n_prediction_steps,
     return dataset
 
 
-def regenerate_splits(dataset: TimeSeriesForecastingDataset, val_share: float, start_idx: int | None = None,
+def regenerate_splits(dataset: TimeSeriesForecastingDataset,
+                      val_share: float,
+                      start_idx: int | None = None,
+                      splits_ms: list[np.ndarray] | None = None,
                       n_folds: int = 5, strategy: str = 'cv'):
     # AutoPyTorch dataset does not allow overlap between different validation series (such that each time step will be
     # assigned the same weights). Therefore, here we reimplement train / validation splits
+    if splits_ms is not None:
+        # This applies the same split to each of the series. It is especially useful if we would like to
+        splits = [[() for _ in range(len(dataset.datasets))] for _ in range(len(splits_ms))]
+        idx_start = 0
+        for idx_seq, seq in enumerate(dataset.datasets):
+            for i, split_ms in enumerate(splits_ms):
+                assert split_ms.max() < len(seq)
 
+                splits[i][idx_seq] = split_ms + idx_start
+            idx_start += dataset.sequence_lengths_train[idx_seq]
+        all_splits = [np.hstack([sp for sp in split]) for split in splits]
+        return all_splits
     if strategy == 'holdout':
         n_prediction_steps = dataset.n_prediction_steps
         splits = [[() for _ in range(len(dataset.datasets))] for _ in range(2)]
@@ -189,9 +203,13 @@ def get_dataloader(dataset: TimeSeriesForecastingDataset,
         if num_batches_per_epoch is None or is_test:
             if batch_size_test is None:
                 batch_size_test = batch_size
+            if is_test:
+                batch_size_ = batch_size_test
+            else:
+                batch_size_ = batch_size
             data_loader = torch.utils.data.DataLoader(
                 sub_dataset,
-                batch_size=batch_size_test,
+                batch_size=batch_size_,
                 shuffle= ~is_test,
                 num_workers=num_workers,
                 pin_memory=True,

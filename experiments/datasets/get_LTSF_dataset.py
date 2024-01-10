@@ -63,7 +63,7 @@ def get_ltsf_dataset(root_path,
         border2 = border1s[1]
     elif flag == 'test':
         set_type = type_map[flag]
-        border2 = border1s[set_type]
+        border2 = border2s[set_type]
     else:
         raise NotImplementedError
 
@@ -157,23 +157,28 @@ def get_test_dataset(root_path,
                       do_normalization: bool = True,
                       make_dataset_uni_variant:bool = False,
                       train_only=False) -> tuple[dict, int, int, tuple]:
-    make_dataset_uni_variant = False
-
-    if make_dataset_uni_variant:
-        raise NotImplementedError
     df_raw, data, border1, border2, (border1s, border2s) = get_ltsf_dataset(root_path, file_name=file_name,
                                                       series_type=series_type, dataset_name=dataset_name, flag=flag,
                                                       target_name=target_name, do_normalization=do_normalization,
                                                       train_only=train_only)
+    if flag != 'test':
+        data = data[:border2]
     start_time = pd.to_datetime(df_raw['date'][0])
-    start_times = [start_time]
+    if make_dataset_uni_variant:
+        y = data.transpose()
+        start_times = [start_time for _ in range(len(y))]
+    else:
+        y = [data]
+        start_times = [start_time]
+
     dataset_info = {
         'X': None,
-        'y': [data],
+        'y': y,
         'start_times': start_times,
         'n_prediction_steps': forecasting_horizon,
         'freq': freq
     }
+
     return dataset_info, border2, len(data) - forecasting_horizon, (border1s, border2s)
     """
     for idx in range(border2, len(data) - forecasting_horizon):

@@ -34,7 +34,7 @@ val_share: 0.5
 model_dir: /phys/ssd2/TSF_OneShot/
 
 train:
-  n_epochs: 50
+  n_epochs: 100
   grad_clip: 0.1
   amp_enable: true
   targe_scaler: 'standard'
@@ -55,10 +55,15 @@ a_optimizer:
   beta2: 0.999
 
 lr_scheduler:
-  type: 'CosineAnnealingWarmRestarts'
-  T_0: 10
-  T_mult: 1
-  eta_min: 1e-6
+  type: 'OneCycleLR'
+  max_lr: ${w_optimizer.lr}
+  epochs: ${train.n_epochs}
+
+#lr_scheduler:
+#  type: 'CosineAnnealingWarmRestarts'
+#  T_0: 10
+#  T_mult: 1
+#  eta_min: 1e-6
 
 wandb:
   name: ${model.type}_${model.model_type}_${model.grad_order}

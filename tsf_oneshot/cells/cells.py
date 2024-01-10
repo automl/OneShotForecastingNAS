@@ -56,6 +56,12 @@ class AbstractSearchEncoderCell(nn.Module):
         for i in range(n_input_nodes, self.max_nodes):
             # The first 2 nodes are input nodes
             for j in range(i):
+                dilation = int(2 ** (i - 1))
+                if 'tcn' in OPS_kwargs:
+                    OPS_kwargs['tcn'].update({'dilation': dilation})
+                else:
+                    OPS_kwargs.update({'tcn': {'dilation': dilation}})
+
                 if is_first_cell:
                     if i == n_input_nodes and j == 0:
                         if 'transformer' in OPS_kwargs:
@@ -551,6 +557,12 @@ class SampledEncoderCell(nn.Module):
                             )
                         else:
                             OPS_kwargs.update({'transformer': {'is_first_layer': True}})
+                dilation = int(2 ** (i - 1))
+                if 'tcn' in OPS_kwargs:
+                    OPS_kwargs['tcn'].update({'dilation': dilation})
+                else:
+                    OPS_kwargs.update({'tcn': {'dilation': dilation}})
+
                 if has_edges[k]:
                     node_str = f"{i}<-{j}"
                     op_name = PRIMITIVES[operations[k]]

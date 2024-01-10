@@ -110,20 +110,20 @@ def main(cfg: omegaconf.DictConfig):
     window_size = int(cfg.benchmark.dataloader.window_size)
     split = [np.arange(b1, b2 - dataset.n_prediction_steps) for b1, b2 in zip(border1s, border2s)]
 
-    split = [
+    split_ms = [
         np.arange(window_size - 1, border2s[0] - dataset.n_prediction_steps),
         np.arange(border1s[1] - 1, border2s[1] - dataset.n_prediction_steps),
         np.arange(border1s[2] - 1, border2s[2] - dataset.n_prediction_steps),
     ]
-
+    split = regenerate_splits(dataset, val_share=None, splits_ms=split_ms)
     train_data_loader, val_data_loader, test_data_loader = get_dataloader(
-        dataset=dataset, splits=split, batch_size=32,
+        dataset=dataset, splits=split, batch_size=128,
         #num_batches_per_epoch=cfg.benchmark.data_loader.num_batches_per_epoch,
         num_batches_per_epoch=500,
         #num_batches_per_epoch=None,
         window_size=window_size,
         is_test_sets=[False, True, True],
-        batch_size_test=32,
+        batch_size_test=256,
     )
     num_targets = dataset.num_targets
 
@@ -217,6 +217,7 @@ def main(cfg: omegaconf.DictConfig):
         del saved_data_info
 
         head_idx = head[0]
+        head_idx = 1
         HEAD = list(cfg.model.HEADs)[head_idx]
 
         cfg_model = omegaconf.OmegaConf.to_container(cfg.model, resolve=True)

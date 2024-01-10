@@ -38,7 +38,7 @@ def seed_everything(seed: int):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     # Otherwise, Conv1D with dilation will be too slow
-    torch.backends.cudnn.deterministic = False
+    torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
 
 
@@ -97,7 +97,7 @@ def main(cfg: omegaconf.DictConfig):
         raise NotImplementedError
 
     dataset = get_forecasting_dataset(dataset_name=dataset_name, **data_info)
-    dataset.lagged_value = [0]  # + get_lags_for_frequency(dataset.freq, num_default_lags=1)
+    dataset.lagged_value = [0] + get_lags_for_frequency(dataset.freq, num_default_lags=1)
 
     val_share: float = cfg.val_share
     """
@@ -141,16 +141,17 @@ def main(cfg: omegaconf.DictConfig):
     if cfg.model.get('select_with_pt', False):
         # if we would like to select architectures with perturbation: https://openreview.net/pdf?id=PKubaeJkw3
         # we need to have another validation set to determine which edge and architectures performances best
-        data_info, split_begin, split_end, (border1s, border2s) = get_LTSF_dataset.get_test_dataset(dataset_root_path,
-                                                                                                    dataset_name=dataset_name,
-                                                                                                    file_name=cfg.benchmark.file_name,
-                                                                                                    series_type=cfg.benchmark.series_type,
-                                                                                                    do_normalization=cfg.benchmark.do_normalization,
-                                                                                                    forecasting_horizon=cfg.benchmark.external_forecast_horizon,
-                                                                                                    make_dataset_uni_variant=cfg.benchmark.get(
-                                                                                                        "make_dataset_uni_variant",
-                                                                                                        False),
-                                                                                                    flag='train_val')
+        data_info, split_begin, split_end, (border1s, border2s) = get_LTSF_dataset.get_test_dataset(
+            dataset_root_path,
+            dataset_name=dataset_name,
+            file_name=cfg.benchmark.file_name,
+            series_type=cfg.benchmark.series_type,
+            do_normalization=cfg.benchmark.do_normalization,
+            forecasting_horizon=cfg.benchmark.external_forecast_horizon,
+            make_dataset_uni_variant=cfg.benchmark.get(
+                "make_dataset_uni_variant",
+                False),
+            flag='train_val')
         split_val_pt = [
             np.arange(border1s[1], border2s[1] - dataset.n_prediction_steps),
         ]
@@ -158,7 +159,7 @@ def main(cfg: omegaconf.DictConfig):
         dataset_val.lagged_value = [0]  # + get_lags_for_frequency(dataset.freq, num_default_lags=1)
 
         val_eval_loader = get_dataloader(
-            dataset=dataset_val, splits=[split_val_pt], batch_size=batch_size,
+            dataset=dataset_val, splits=split_val_pt, batch_size=batch_size,
             num_batches_per_epoch=None,
             is_test_sets=[True],
             window_size=window_size,
