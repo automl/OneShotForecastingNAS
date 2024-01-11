@@ -33,6 +33,8 @@ class AbstractForecastingNetworkController(nn.Module):
     def __init__(self,
                  d_input_past: int,
                  d_input_future: int,
+                 window_size:int,
+                 forecasting_horizon:int,
                  d_model: int,
                  d_output: int,
                  n_cells: int,
@@ -50,6 +52,8 @@ class AbstractForecastingNetworkController(nn.Module):
         self.meta_info = dict(
             d_input_past=d_input_past, d_input_future=d_input_future,
             d_model=d_model,
+            window_size=window_size,
+            forecasting_horizon=forecasting_horizon,
             OPS_kwargs=OPS_kwargs,
             d_output=d_output,
             n_cells=n_cells, n_nodes=n_nodes, n_cell_input_nodes=n_cell_input_nodes,
@@ -66,6 +70,8 @@ class AbstractForecastingNetworkController(nn.Module):
 
         super(AbstractForecastingNetworkController, self).__init__()
         self.net = self.net_type(d_input_past=d_input_past, d_input_future=d_input_future,
+                                 window_size=window_size,
+                                 forecasting_horizon=forecasting_horizon,
                                  d_model=d_model,
                                  OPS_kwargs=OPS_kwargs,
                                  d_output=d_output,
@@ -146,12 +152,12 @@ class AbstractForecastingNetworkController(nn.Module):
     def get_all_wags(self):
         w_dag_encoder = self.get_w_dag(self.arch_p_encoder + self.mask_encoder)
         w_dag_decoder = self.get_w_dag(self.arch_p_decoder + self.mask_decoder)
-        w_dag_decoder_choice = self.get_w_dag(self.arch_p_decoder_choices + self.mask_decoder_choice)
+        w_dag_decoder_choices = self.get_w_dag(self.arch_p_decoder_choices + self.mask_decoder_choices)
         w_dag_head = self.get_w_dag(self.arch_p_heads + self.mask_heads)
         return dict(
             arch_p_encoder=w_dag_encoder,
             arch_p_decoder=w_dag_decoder,
-            w_dag_decoder_choice=w_dag_decoder_choice,
+            arch_p_decoder_choices=w_dag_decoder_choices,
             arch_p_heads=w_dag_head
         )
 
@@ -277,7 +283,7 @@ class AbstractForecastingNetworkController(nn.Module):
 
     def update_candidate_flags(self):
         i_start = 0
-        for mask in self.all_masks:
+        for mask in self.all_mask_names:
             mask_value = getattr(self, mask)
             n_edge = len(mask_value)
             self.candidate_flag_ops[i_start: i_start + len(mask_value)] = mask_value.isfinite().all(1).tolist()
@@ -296,6 +302,8 @@ class ForecastingDARTSNetworkController(AbstractForecastingNetworkController):
     def __init__(self,
                  d_input_past: int,
                  d_input_future: int,
+                 window_size:int,
+                 forecasting_horizon:int,
                  d_model: int,
                  d_output: int,
                  n_cells: int,
@@ -303,6 +311,7 @@ class ForecastingDARTSNetworkController(AbstractForecastingNetworkController):
                  n_cell_input_nodes: int,
                  PRIMITIVES_encoder: list[str],
                  PRIMITIVES_decoder: list[str],
+                 DECODERS: list[str],
                  HEADs: list[str],
                  HEADs_kwargs: dict[str, dict] = {},
                  normalizer: dict = {},
@@ -312,6 +321,8 @@ class ForecastingDARTSNetworkController(AbstractForecastingNetworkController):
                  ):
         super(ForecastingDARTSNetworkController, self).__init__(d_input_past=d_input_past,
                                                                 d_input_future=d_input_future,
+                                                                window_size=window_size,
+                                                                forecasting_horizon=forecasting_horizon,
                                                                 OPS_kwargs=OPS_kwargs,
                                                                 d_model=d_model, d_output=d_output,
                                                                 n_cells=n_cells, n_nodes=n_nodes,
@@ -319,6 +330,7 @@ class ForecastingDARTSNetworkController(AbstractForecastingNetworkController):
                                                                 PRIMITIVES_encoder=PRIMITIVES_encoder,
                                                                 PRIMITIVES_decoder=PRIMITIVES_decoder,
                                                                 HEADs=HEADs,
+                                                                DECODERS=DECODERS,
                                                                 HEADs_kwargs=HEADs_kwargs,
                                                                 val_loss_criterion=val_loss_criterion,
                                                                 backcast_loss_ration=backcast_loss_ration)
@@ -685,7 +697,7 @@ class ForecastingAbstractMixedNetController(AbstractForecastingNetworkController
     def get_all_wags(self):
         w_dag_encoder_seq = self.get_w_dag(self.arch_p_encoder_seq + self.mask_encoder_seq)
         w_dag_decoder_seq = self.get_w_dag(self.arch_p_decoder_seq + self.mask_decoder_seq)
-        w_dag_decoder_choice_seq = self.get_w_dag(self.arch_p_decoder_choices_seq + self.mask_decoder_choices_seq)
+        w_dag_decoder_choices_seq = self.get_w_dag(self.arch_p_decoder_choices_seq + self.mask_decoder_choices_seq)
 
         w_dag_encoder_flat = self.get_w_dag(self.arch_p_encoder_flat + self.mask_encoder_flat)
 
@@ -697,7 +709,7 @@ class ForecastingAbstractMixedNetController(AbstractForecastingNetworkController
             arch_p_encoder_seq=w_dag_encoder_seq,
             arch_p_decoder_seq=w_dag_decoder_seq,
             arch_p_heads_seq=w_dag_head,
-            arch_p_decoder_choice_seq=w_dag_decoder_choice_seq,
+            arch_p_decoder_choices_seq=w_dag_decoder_choices_seq,
             arch_p_encoder_flat=w_dag_encoder_flat,
             arch_p_heads_flat=w_dag_head,
 

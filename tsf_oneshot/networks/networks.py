@@ -108,7 +108,7 @@ class ForecastingAbstractNetwork(nn.Module):
         raise NotImplementedError
 
     def get_decoder_out(self,
-                        arch_p_decoder_choice: torch.Tensor,
+                        arch_p_decoder_choices: torch.Tensor,
                         decoder_forward_kwargs: dict):
         raise NotImplementedError
 
@@ -117,14 +117,14 @@ class ForecastingAbstractNetwork(nn.Module):
                 arch_p_encoder: torch.Tensor,
                 arch_p_decoder: torch.Tensor,
                 arch_p_heads: torch.Tensor,
-                arch_p_decoder_choice):
+                arch_p_decoder_choices):
         net_encoder_out, cell_intermediate_steps = self.encoder(x_past, w_dag=arch_p_encoder)
         decoder_forward_kwargs = dict(x=x_future,
-                                        w_dag=arch_p_decoder,
-                                        cells_encoder_output=cell_intermediate_steps,
-                                        net_encoder_output=net_encoder_out)
+                                      w_dag=arch_p_decoder,
+                                      cells_encoder_output=cell_intermediate_steps,
+                                      net_encoder_output=net_encoder_out)
 
-        cell_decoder_out = self.get_decoder_out(arch_p_decoder_choice=arch_p_decoder_choice[0],
+        cell_decoder_out = self.get_decoder_out(arch_p_decoder_choices=arch_p_decoder_choices[0],
                                                 decoder_forward_kwargs=decoder_forward_kwargs)
 
         forecast = get_head_out(cell_decoder_out, heads=self.heads, head_idx=None)
@@ -145,10 +145,10 @@ class ForecastingDARTSNetwork(ForecastingAbstractNetwork):
         return SearchDARTSDecoder(**decoder_kwargs)
 
     def get_decoder_out(self,
-                        arch_p_decoder_choice: torch.Tensor,
+                        arch_p_decoder_choices: torch.Tensor,
                         decoder_forward_kwargs: dict
                         ):
-        return sum(w * de(**decoder_forward_kwargs) for w, de in zip(arch_p_decoder_choice, self.decoder) if w > 0.)
+        return sum(w * de(**decoder_forward_kwargs) for w, de in zip(arch_p_decoder_choices, self.decoder) if w > 0.)
 
 
 class ForecastingGDASNetwork(ForecastingAbstractNetwork):
@@ -161,11 +161,10 @@ class ForecastingGDASNetwork(ForecastingAbstractNetwork):
         return SearchGDASDecoder(**decoder_kwargs)
 
     def get_decoder_out(self,
-                        arch_p_decoder_choice: torch.Tensor,
+                        arch_p_decoder_choices: torch.Tensor,
                         decoder_forward_kwargs: dict
                         ):
-
-        hardwts, index = arch_p_decoder_choice
+        hardwts, index = arch_p_decoder_choices
         argmaxs = index.item()
 
         weigsum = sum(
@@ -347,12 +346,12 @@ class ForecastingAbstractMixedNet(nn.Module):
     def get_seq_forward_kwargs(self, arch_p_encoder_seq: torch.Tensor,
                                arch_p_decoder_seq: torch.Tensor,
                                arch_p_heads_seq: torch.Tensor,
-                               arch_p_decoder_choice_seq):
+                               arch_p_decoder_choices_seq):
         return dict(
             arch_p_encoder=arch_p_encoder_seq,
             arch_p_decoder=arch_p_decoder_seq,
             arch_p_heads=arch_p_heads_seq,
-            arch_p_decoder_choice=arch_p_decoder_choice_seq
+            arch_p_decoder_choices=arch_p_decoder_choices_seq
         )
 
     def get_flat_forward_kwargs(self,
@@ -371,11 +370,11 @@ class ForecastingAbstractMixedNet(nn.Module):
                 arch_p_heads_seq: torch.Tensor,
                 arch_p_encoder_flat: torch.Tensor,
                 arch_p_heads_flat: torch.Tensor,
-                arch_p_decoder_choice_seq: torch.Tensor,
+                arch_p_decoder_choices_seq: torch.Tensor,
                 arch_p_net: torch.Tensor | None = None
                 ):
         seq_kwargs = self.get_seq_forward_kwargs(
-            arch_p_encoder_seq, arch_p_decoder_seq, arch_p_heads_seq, arch_p_decoder_choice_seq
+            arch_p_encoder_seq, arch_p_decoder_seq, arch_p_heads_seq, arch_p_decoder_choices_seq
         )
 
         flat_kwargs = self.get_flat_forward_kwargs(arch_p_encoder_flat, arch_p_heads_flat)

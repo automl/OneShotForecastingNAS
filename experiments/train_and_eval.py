@@ -214,6 +214,8 @@ def main(cfg: omegaconf.DictConfig):
         net_init_kwargs.update(
             {'d_input_past': d_input_past,
              'OPS_kwargs': ops_kwargs,
+             'window_size': window_size,
+             'forecasting_horizon': n_prediction_steps,
              'd_input_future': d_input_future,
              'd_model': int(cfg.model.d_model),
              'd_output': d_output,
