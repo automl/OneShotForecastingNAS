@@ -13,6 +13,7 @@ seq_model:
   # PRIMITIVES_encoder: ['transformer']
   PRIMITIVES_decoder: [ 'mlp_mix', 'gru', 'lstm', 'transformer', 'tcn', 'skip_connection' ]
   #  PRIMITIVES_decoder: ['lstm']
+  'DECODERS': ['seq', 'linear']
 
 
 flat_model:
@@ -27,3 +28,4 @@ HEADS: [ 'quantile', 'mse', 'mae' ]
 use_second_order_grad: false
 select_with_pt: true
 proj_intv: 1
+proj_intv_nodes: 2

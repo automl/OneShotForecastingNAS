@@ -4,7 +4,7 @@ model_type: flat
 
 grad_order: 1
 
-n_cells: 2
+n_cells: 1
 n_nodes: 4
 n_cell_input_nodes: 1
 backcast_loss_ration: 0.0
@@ -12,6 +12,7 @@ backcast_loss_ration: 0.0
 use_second_order_grad: false
 select_with_pt: true
 proj_intv: 1
+proj_intv_nodes: 2
 
 
 PRIMITIVES_encoder: ['mlp','nbeats_g','nbeats_s', 'nbeats_t', 'skip_connection']

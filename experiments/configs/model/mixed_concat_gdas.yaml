@@ -13,15 +13,11 @@ seq_model:
   # PRIMITIVES_encoder: ['transformer']
   PRIMITIVES_decoder: [ 'mlp_mix', 'gru', 'lstm', 'transformer', 'tcn', 'skip_connection' ]
   #  PRIMITIVES_decoder: ['lstm']
-
-  model_kwargs:
-    tcn:
-      kernel_size: 15
-      dilation: 1
+  'DECODERS': ['seq', 'linear']
 
 
 flat_model:
-  n_cells: 2
+  n_cells: 1
   n_nodes: 4
   n_cell_input_nodes: 1
   backcast_loss_ration: 0.0

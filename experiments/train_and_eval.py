@@ -168,10 +168,11 @@ def main(cfg: omegaconf.DictConfig):
         )[0]
         # the number of epochs that we need to train before evaluating the actual edge
         proj_intv = cfg.model.get("proj_intv", 1)
+        proj_intv_nodes = cfg.model.get("proj_intv_nodes", 1)
     else:
         proj_intv = 1
+        proj_intv_nodes = 1
         val_eval_loader = None
-
 
     # we need to adjust the values to initialize our networks
     window_size = (window_size - 1) // search_sample_interval + 1
@@ -218,6 +219,7 @@ def main(cfg: omegaconf.DictConfig):
              'd_output': d_output,
              'PRIMITIVES_encoder': list(cfg.model.PRIMITIVES_encoder),
              'PRIMITIVES_decoder': list(cfg.model.PRIMITIVES_decoder),
+             'DECODERS': list(cfg.model.DECODERS),
              'HEADs': list(cfg.model.HEADs),
              'HEADs_kwargs': heads_kwargs
              }
@@ -289,6 +291,7 @@ def main(cfg: omegaconf.DictConfig):
             'backcast_loss_ration_flat': float(cfg.model.flat_model.get('backcast_loss_ration', 0.0)),
 
             'PRIMITIVES_encoder_flat': list(cfg.model.flat_model.PRIMITIVES_encoder),
+            'DECODERS_seq': list(cfg.model.seq_model.DECODERS),
 
             'OPS_kwargs_flat': ops_kwargs_flat,
 
@@ -375,6 +378,7 @@ def main(cfg: omegaconf.DictConfig):
         val_loader=val_data_loader,
         val_eval_loader=val_eval_loader,
         proj_intv=proj_intv,
+        proj_intv_nodes=proj_intv_nodes,
         window_size=window_size,
         n_prediction_steps=n_prediction_steps,
         search_sample_interval=search_sample_interval,
@@ -399,10 +403,6 @@ def main(cfg: omegaconf.DictConfig):
         epoch_start = trainer.load(out_path, model=model, w_optimizer=w_optimizer,
                                    a_optimizer=a_optimizer, lr_scheduler_w=lr_scheduler)
 
-    # out_neg = Path(cfg.model_dir) / device / dataset_type / dataset_name / model_name / f'{seed}_w_negative_loss'
-    # epoch_start = trainer.load(out_path, model=model, w_optimizer=w_optimizer,
-    #                               a_optimizer=a_optimizer, lr_scheduler_w=lr_scheduler)
-
     for epoch in range(epoch_start, n_epochs):
         w_loss = trainer.train_epoch(epoch)
         if epoch in [29, 59, 89, 119, 149]:
@@ -420,6 +420,8 @@ def main(cfg: omegaconf.DictConfig):
             break
     if search_type == 'darts':
         trainer.pt_project(cfg)
+        trainer.save(out_path, epoch=n_epochs - 1)
+        trainer.pt_project_topology()
         trainer.save(out_path, epoch=n_epochs - 1)
 
 

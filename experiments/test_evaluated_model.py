@@ -154,6 +154,8 @@ def main(cfg: omegaconf.DictConfig):
         HEAD = list(cfg.model.HEADs)[head_idx]
         net_init_kwargs = {
             'd_input_past': d_input_past,
+            'window_size': window_size,
+            'forecasting_horizon': dataset.n_prediction_steps,
             'OPS_kwargs': ops_kwargs,
             'd_input_future': d_input_future,
             'd_model': int(cfg.model.d_model),
@@ -217,7 +219,6 @@ def main(cfg: omegaconf.DictConfig):
         del saved_data_info
 
         head_idx = head[0]
-        head_idx = 1
         HEAD = list(cfg.model.HEADs)[head_idx]
 
         cfg_model = omegaconf.OmegaConf.to_container(cfg.model, resolve=True)
