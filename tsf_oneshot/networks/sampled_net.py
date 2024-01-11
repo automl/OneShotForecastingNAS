@@ -7,7 +7,7 @@ import inspect
 
 import torch
 from torch import nn
-from tsf_oneshot.networks.components import EmbeddingLayer, AbstractSearchEncoder
+from tsf_oneshot.networks.components import EmbeddingLayer, AbstractSearchEncoder, LinearDecoder
 from tsf_oneshot.networks.combined_net_utils import (
     get_kwargs,
     forward_concat_net,
@@ -120,6 +120,8 @@ class SampledNet(nn.Module):
     def __init__(self,
                  d_input_past: int,
                  d_input_future: int,
+                 window_size:int,
+                 forecasting_horizon: int,
                  d_model: int,
                  d_output: int,
                  n_cells: int,
@@ -134,6 +136,7 @@ class SampledNet(nn.Module):
                  OPS_kwargs: dict[str, dict],
                  HEAD: str,
                  HEADs_kwargs: dict[str, dict],
+                 DECODERS: list[str] = ['seq'],
                  backcast_loss_ration: float = 0.0
                  ):
         super(SampledNet, self).__init__()
@@ -149,6 +152,7 @@ class SampledNet(nn.Module):
             PRIMITIVES_encoder=PRIMITIVES_encoder,
             PRIMITIVES_decoder=PRIMITIVES_decoder,
             HEAD=HEAD, HEADs_kwargs=HEADs_kwargs,
+            DECODERS=DECODERS,
             backcast_loss_ration=backcast_loss_ration,
         )
         self.d_input_past = d_input_past
@@ -169,6 +173,8 @@ class SampledNet(nn.Module):
 
         self.HEAD = HEAD
         self.HEADs_kwargs = HEADs_kwargs
+
+        self.DECODERS = DECODERS
 
         forecast_only = backcast_loss_ration == 0.0
         self.forecast_only = forecast_only
@@ -199,25 +205,29 @@ class SampledNet(nn.Module):
                               has_edges=has_edges_decoder,
                               OPS_kwargs=OPS_kwargs
                               )
-
-        self.decoder: SampledDecoder = SampledDecoder(
-            **decoder_kwargs
-        )
+        if DECODERS[0] == 'seq':
+            self.decoder: SampledDecoder = SampledDecoder(
+                **decoder_kwargs
+            )
+        else:
+            self.decoder = LinearDecoder(window_size, forecasting_horizon)
 
         self.head = PREDICTION_HEADs[HEAD](d_model=d_model, d_output=d_output, **HEADs_kwargs)
 
     def forward(self, x_past: torch.Tensor,
                 x_future: torch.Tensor):
-        cell_encoder_out, cell_intermediate_steps = self.encoder(x_past)
+        net_encoder_output, cell_intermediate_steps = self.encoder(x_past)
 
         cell_decoder_out = self.decoder(x=x_future,
                                         cells_encoder_output=cell_intermediate_steps,
-                                        net_encoder_output=cell_encoder_out)
+                                        net_encoder_output=net_encoder_output)
+
         forecast = self.head(cell_decoder_out)
+
         if self.forecast_only:
             return forecast
 
-        backcast = self.head(cell_encoder_out)
+        backcast = self.head(net_encoder_output)
 
         return backcast, forecast
 
@@ -440,6 +450,8 @@ class AbstractMixedSampledNet(SampledNet):
                  PRIMITIVES_encoder_seq: list[str],
                  PRIMITIVES_decoder_seq: list[str],
                  OPS_kwargs_seq: dict[str, dict],
+                 DECODERS_seq: list[str],
+
                  HEAD: str,
                  HEADs_kwargs_seq: dict[str, dict],
 

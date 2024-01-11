@@ -16,7 +16,7 @@ from tsf_oneshot.networks.networks import (
     ForecastingDARTSMixedConcatNet,
     ForecastingGDASMixedConcatNet,
     ForecastingDARTSMixedParallelNet,
-    ForecastingGDASMixedParallelNet
+    ForecastingGDASMixedParallelNet,
 )
 from tsf_oneshot.networks.combined_net_utils import get_kwargs
 from tsf_oneshot.networks.utils import (
@@ -25,6 +25,7 @@ from tsf_oneshot.networks.utils import (
     gumble_sample
 )
 
+N_RESERVED_EDGES_PER_NODE=2
 
 class AbstractForecastingNetworkController(nn.Module):
     net_type = ForecastingDARTSNetwork
@@ -41,6 +42,7 @@ class AbstractForecastingNetworkController(nn.Module):
                  PRIMITIVES_decoder: list[str],
                  HEADs: list[str],
                  HEADs_kwargs: dict[str, dict] = {},
+                 DECODERS: list[str] = ['seq'],
                  OPS_kwargs: dict[str, dict] = {},
                  val_loss_criterion: str = 'mse',
                  backcast_loss_ration: float = 0.0
@@ -53,6 +55,7 @@ class AbstractForecastingNetworkController(nn.Module):
             n_cells=n_cells, n_nodes=n_nodes, n_cell_input_nodes=n_cell_input_nodes,
             PRIMITIVES_encoder=PRIMITIVES_encoder,
             PRIMITIVES_decoder=PRIMITIVES_decoder,
+            DECODERS=DECODERS,
             HEADs=HEADs, HEADs_kwargs=HEADs_kwargs,
             val_loss_criterion=val_loss_criterion,
             backcast_loss_ration=backcast_loss_ration
@@ -69,12 +72,15 @@ class AbstractForecastingNetworkController(nn.Module):
                                  n_cells=n_cells, n_nodes=n_nodes, n_cell_input_nodes=n_cell_input_nodes,
                                  PRIMITIVES_encoder=PRIMITIVES_encoder,
                                  PRIMITIVES_decoder=PRIMITIVES_decoder,
+                                 DECODERS=DECODERS,
                                  HEADs=HEADs, HEADs_kwargs=HEADs_kwargs,
                                  forecast_only=forecast_only)
 
-        self.arch_p_encoder = nn.Parameter(1e-3 * torch.randn(self.net.encoder_n_edges, len(PRIMITIVES_encoder)))
-        self.arch_p_decoder = nn.Parameter(1e-3 * torch.randn(self.net.decoder_n_edges, len(PRIMITIVES_decoder)))
+        self.arch_p_encoder = nn.Parameter(1e-3 * torch.randn(self.net.n_edges, len(PRIMITIVES_encoder)))
+        self.arch_p_decoder = nn.Parameter(1e-3 * torch.randn(self.net.n_edges, len(PRIMITIVES_decoder)))
         self.arch_p_heads = nn.Parameter(1e-3 * torch.randn(1, len(HEADs)))
+
+        self.arch_p_decoder_choices = nn.Parameter(1e-3 * torch.randn(1, len(DECODERS)))
 
         # setup alphas list
         self._arch_ps = []
@@ -90,25 +96,62 @@ class AbstractForecastingNetworkController(nn.Module):
         else:
             raise NotImplementedError
 
-        # These masks are used to remove the corresponding operations during pertubation
-        self.len_all_arch_p = [len(self.arch_p_encoder), len(self.arch_p_decoder), len(self.arch_p_heads)]
+        self.all_arch_p_names = ['arch_p_encoder', 'arch_p_decoder', 'arch_p_heads', 'arch_p_decoder_choices']
+        
+        self.len_all_arch_p = self.get_len_arch_p()
+        self.all_mask_names = self.get_mask_names()
 
-        self.mask_encoder = nn.Parameter(torch.zeros_like(self.arch_p_encoder), requires_grad=False)
-        self.mask_decoder = nn.Parameter(torch.zeros_like(self.arch_p_decoder), requires_grad=False)
-        self.mask_head = nn.Parameter(torch.zeros_like(self.arch_p_heads), requires_grad=False)
+        self.registers_all_masks()
+        self.candidate_flag_ops = [True] * sum(self.len_all_arch_p)
 
-        self.all_masks = ['mask_encoder', 'mask_decoder', 'mask_head']
-        self.len_all_arch_p = [len(getattr(self, mask)) for mask in self.all_masks]
+        # topology selection phase
+        self.len_all_nodes = [self.net.n_cell_nodes]
 
-        self.candidate_flags = [True] * sum(self.len_all_arch_p)
+        self.edges2index, self.candidate_flag_nodes = self.get_edge2index()
+        
+    def _get_edge2index(self, n_nodes: int, net_edge2index, backbone_arch_names: list[str]):
+        edge2idx = {}
+        for i in range(n_nodes):
+            for j in range(i):
+                node = f'{i}<-{j}'
+                node_idx = []
+                idx = net_edge2index[node]
+                idx_start = 0
+                for name, p_len in zip(self.all_arch_p_names, self.len_all_arch_p):
+                    if name in backbone_arch_names:
+                        node_idx.append(idx_start + idx)
+                    idx_start += p_len
+                edge2idx[node] = node_idx
+        return edge2idx
+        
+    def get_edge2index(self):
+        edge2idx = self._get_edge2index(self.net.n_cell_nodes, self.net.edge2index, ['arch_p_encoder', 'arch_p_decoder'])
+        candidate_flag_nodes = [True] * self.net.n_cell_nodes
+        candidate_flag_nodes[:N_RESERVED_EDGES_PER_NODE] = [False] * N_RESERVED_EDGES_PER_NODE
+        return edge2idx, candidate_flag_nodes
+
+    def get_len_arch_p(self):
+        return [len(getattr(self, arch_p_name)) for arch_p_name in self.all_arch_p_names]
+
+    def get_mask_names(self):
+        return [arch_p_name.replace('arch_p', 'mask') for arch_p_name in self.all_arch_p_names]
+
+    def registers_all_masks(self):
+        for arch_p_name, mask_name in zip(self.all_arch_p_names, self.all_mask_names):
+            arch_p = getattr(self, arch_p_name)
+            self.register_buffer(
+                mask_name, torch.zeros_like(arch_p),
+            )
 
     def get_all_wags(self):
         w_dag_encoder = self.get_w_dag(self.arch_p_encoder + self.mask_encoder)
         w_dag_decoder = self.get_w_dag(self.arch_p_decoder + self.mask_decoder)
-        w_dag_head = self.get_w_dag(self.arch_p_heads + self.mask_head)
+        w_dag_decoder_choice = self.get_w_dag(self.arch_p_decoder_choices + self.mask_decoder_choice)
+        w_dag_head = self.get_w_dag(self.arch_p_heads + self.mask_heads)
         return dict(
             arch_p_encoder=w_dag_encoder,
             arch_p_decoder=w_dag_decoder,
+            w_dag_decoder_choice=w_dag_decoder_choice,
             arch_p_heads=w_dag_head
         )
 
@@ -232,6 +275,15 @@ class AbstractForecastingNetworkController(nn.Module):
             json.dump(meta_info, f)
         torch.save(self.state_dict(), base_path / f'model_weights.pth')
 
+    def update_candidate_flags(self):
+        i_start = 0
+        for mask in self.all_masks:
+            mask_value = getattr(self, mask)
+            n_edge = len(mask_value)
+            self.candidate_flag_ops[i_start: i_start + len(mask_value)] = mask_value.isfinite().all(1).tolist()
+            i_start += n_edge
+        # TODO check how to update candidate flag edges properly!!!
+
     @staticmethod
     def load(base_path: Path, device=torch.device('cpu'),
              model: Optional["AbstractForecastingNetworkController"] = None):
@@ -309,6 +361,7 @@ class ForecastingDARTSNetworkController(AbstractForecastingNetworkController):
                 meta_info = json.load(f)
             model = ForecastingDARTSNetworkController(**meta_info)
         model.load_state_dict(torch.load(base_path / f'model_weights.pth', map_location=device))
+        model.update_candidate_flags()
         return model
 
 
@@ -368,14 +421,19 @@ class AbstractForecastingFlatNetworkController(AbstractForecastingNetworkControl
         else:
             raise NotImplementedError
 
-        self.mask_encoder = nn.Parameter(torch.zeros_like(self.arch_p_encoder), requires_grad=False)
-        self.mask_head = nn.Parameter(torch.zeros_like(self.arch_p_heads), requires_grad=False)
+        self.all_arch_p_names = ['arch_p_encoder', 'arch_p_heads']
 
-        self.all_masks = ['mask_encoder', 'mask_head']
-        self.len_all_arch_p = [len(getattr(self, mask)) for mask in self.all_masks]
+        self.len_all_arch_p = self.get_len_arch_p()
+        self.all_mask_names = self.get_mask_names()
 
-        self.candidate_flags = [True] * sum(self.len_all_arch_p)
+        self.registers_all_masks()
+        self.candidate_flag_ops = [True] * sum(self.len_all_arch_p)
 
+        # topology selection phase
+
+        self.len_all_nodes = [self.net.n_cell_nodes]
+        self.edges2index, self.candidate_edges = self.get_edge2index()
+        
     def get_all_wags(self):
         w_dag_encoder = self.get_w_dag(self.arch_p_encoder)
         w_dag_head = self.get_w_dag(self.arch_p_heads)
@@ -424,6 +482,7 @@ class ForecastingDARTSFlatNetworkController(AbstractForecastingFlatNetworkContro
                 meta_info = json.load(f)
             model = ForecastingDARTSFlatNetworkController(**meta_info)
         model.load_state_dict(torch.load(base_path / f'model_weights.pth', map_location=device))
+        model.update_candidate_flags()
         return model
 
 
@@ -474,6 +533,7 @@ class ForecastingGDASNetworkController(AbstractForecastingNetworkController):
                 meta_info = json.load(f)
             model = ForecastingGDASNetworkController(**meta_info)
         model.load_state_dict(torch.load(base_path / f'model_weights.pth', map_location=device))
+        model.update_candidate_flags()
         return model
 
 
@@ -488,6 +548,7 @@ class ForecastingGDASFlatNetworkController(AbstractForecastingFlatNetworkControl
                 meta_info = json.load(f)
             model = ForecastingGDASNetworkController(**meta_info)
         model.load_state_dict(torch.load(base_path / f'model_weights.pth', map_location=device))
+        model.update_candidate_flags()
         return model
 
 
@@ -505,6 +566,7 @@ class ForecastingAbstractMixedNetController(AbstractForecastingNetworkController
                  n_cell_input_nodes_seq: int,
                  PRIMITIVES_encoder_seq: list[str],
                  PRIMITIVES_decoder_seq: list[str],
+                 DECODERS_seq: list[str],
                  OPS_kwargs_seq: dict[str, dict],
 
                  window_size: int,
@@ -530,7 +592,6 @@ class ForecastingAbstractMixedNetController(AbstractForecastingNetworkController
 
         nn.Module.__init__(self)
 
-
         forecast_only_seq = backcast_loss_ration_seq == 0
         forecast_only_flat = backcast_loss_ration_flat == 0
 
@@ -542,16 +603,21 @@ class ForecastingAbstractMixedNetController(AbstractForecastingNetworkController
         self.heads = self.net.heads
 
         self.arch_p_encoder_seq = nn.Parameter(
-            1e-3 * torch.randn(self.net.seq_net.encoder_n_edges, len(PRIMITIVES_encoder_seq))
+            1e-3 * torch.randn(self.net.seq_net.n_edges, len(PRIMITIVES_encoder_seq))
         )
         self.arch_p_decoder_seq = nn.Parameter(
-            1e-3 * torch.randn(self.net.seq_net.decoder_n_edges, len(PRIMITIVES_decoder_seq))
+            1e-3 * torch.randn(self.net.seq_net.n_edges, len(PRIMITIVES_decoder_seq))
+        )
+        self.arch_p_decoder_choices_seq = nn.Parameter(
+            1e-3 * torch.randn(1, len(DECODERS_seq))
         )
 
         self.arch_p_encoder_flat = nn.Parameter(
-            1e-3 * torch.randn(self.net.flat_net.encoder_n_edges, len(PRIMITIVES_encoder_flat))
+            1e-3 * torch.randn(self.net.flat_net.n_edges, len(PRIMITIVES_encoder_flat))
         )
         self.arch_p_heads = nn.Parameter(1e-3 * torch.randn(1, len(HEADs)))
+
+        self.arch_p_nets = nn.Parameter(1e-3 * torch.randn(1, 2))
 
         # setup alphas list
         self._arch_ps = []
@@ -569,15 +635,38 @@ class ForecastingAbstractMixedNetController(AbstractForecastingNetworkController
 
         # These masks are used to remove the corresponding operations during pertubation
 
-        self.mask_encoder_seq = nn.Parameter(torch.zeros_like(self.arch_p_encoder_seq), requires_grad=False)
-        self.mask_decoder_seq = nn.Parameter(torch.zeros_like(self.arch_p_decoder_seq), requires_grad=False)
-        self.mask_encoder_flat = nn.Parameter(torch.zeros_like(self.arch_p_encoder_flat), requires_grad=False)
-        self.mask_head = nn.Parameter(torch.zeros_like(self.arch_p_heads), requires_grad=False)
+        self.all_arch_p_names = [
+            'arch_p_encoder_seq',
+            'arch_p_decoder_seq',
+            'arch_p_encoder_flat',
+            'arch_p_heads',
+            'arch_p_decoder_choices_seq',
+        ]
+        self.len_all_arch_p = self.get_len_arch_p()
+        self.all_mask_names = self.get_mask_names()
 
-        self.all_masks = ['mask_encoder_seq', 'mask_decoder_seq', 'mask_encoder_flat', 'mask_head']
-        self.len_all_arch_p = [len(getattr(self, mask)) for mask in self.all_masks]
+        self.registers_all_masks()
+        self.candidate_flag_ops = [True] * sum(self.len_all_arch_p)
 
-        self.candidate_flags = [True] * sum(self.len_all_arch_p)
+        # topology selection phase
+        self.len_all_nodes = [self.net.n_cell_nodes_seq, self.net.n_cell_nodes_flat]
+
+        self.edges2index, self.candidate_flag_nodes = self.get_edge2index()
+        
+        # we set mask net as an independent value, since we might need both networks as our super net
+        self.mask_net = nn.Parameter(torch.zeros_like(self.arch_p_nets), requires_grad=False)
+        
+    def get_edge2index(self):
+        edge2idx = self._get_edge2index(self.net.n_cell_nodes_seq, self.net.edge2index_seq,
+                                        ['arch_p_encoder_seq', 'arch_p_decoder_seq'])
+        candidate_flag_nodes_seq = [True] * self.net.n_cell_nodes_seq
+        candidate_flag_nodes_seq[:N_RESERVED_EDGES_PER_NODE] = [False] * N_RESERVED_EDGES_PER_NODE
+        
+        edge2idx.update(self._get_edge2index(self.net.n_cell_nodes_flat, self.net.edge2index_flat,
+                                        ['arch_p_encoder_flat', 'arch_p_decoder_flat']))
+        candidate_flag_nodes_flat = [True] * self.net.n_cell_nodes_flat
+        candidate_flag_nodes_flat[:N_RESERVED_EDGES_PER_NODE] = [False] * N_RESERVED_EDGES_PER_NODE
+        return edge2idx, candidate_flag_nodes_seq + candidate_flag_nodes_flat
 
     def validate_input_kwargs(self, kwargs):
         backcast_loss_ration_seq = kwargs.pop('backcast_loss_ration_seq')
@@ -596,18 +685,23 @@ class ForecastingAbstractMixedNetController(AbstractForecastingNetworkController
     def get_all_wags(self):
         w_dag_encoder_seq = self.get_w_dag(self.arch_p_encoder_seq + self.mask_encoder_seq)
         w_dag_decoder_seq = self.get_w_dag(self.arch_p_decoder_seq + self.mask_decoder_seq)
+        w_dag_decoder_choice_seq = self.get_w_dag(self.arch_p_decoder_choices_seq + self.mask_decoder_choices_seq)
 
         w_dag_encoder_flat = self.get_w_dag(self.arch_p_encoder_flat + self.mask_encoder_flat)
 
-        w_dag_head = self.get_w_dag(self.arch_p_heads + self.mask_head)
+        w_dag_head = self.get_w_dag(self.arch_p_heads + self.mask_heads)
+
+        w_dag_net = self.get_w_dag(self.arch_p_nets + self.mask_net)
 
         return dict(
             arch_p_encoder_seq=w_dag_encoder_seq,
             arch_p_decoder_seq=w_dag_decoder_seq,
             arch_p_heads_seq=w_dag_head,
-
+            arch_p_decoder_choice_seq=w_dag_decoder_choice_seq,
             arch_p_encoder_flat=w_dag_encoder_flat,
-            arch_p_heads_flat=w_dag_head
+            arch_p_heads_flat=w_dag_head,
+
+            arch_p_net=w_dag_net
         )
 
     def forward(self, x_past: torch.Tensor, x_future: torch.Tensor, return_w_head: bool = False):
@@ -634,6 +728,7 @@ class ForecastingDARTSMixedParallelNetController(ForecastingAbstractMixedNetCont
                  n_cell_input_nodes_seq: int,
                  PRIMITIVES_encoder_seq: list[str],
                  PRIMITIVES_decoder_seq: list[str],
+                 DECODERS_seq: list[str],
                  OPS_kwargs_seq: dict[str, dict],
 
                  window_size: int,
@@ -667,6 +762,7 @@ class ForecastingDARTSMixedParallelNetController(ForecastingAbstractMixedNetCont
                 meta_info = json.load(f)
             model = ForecastingDARTSMixedParallelNetController(**meta_info)
         model.load_state_dict(torch.load(base_path / f'model_weights.pth', map_location=device))
+        model.update_candidate_flags()
         return model
 
 
@@ -683,6 +779,7 @@ class ForecastingDARTSMixedConcatNetController(ForecastingDARTSMixedParallelNetC
                 meta_info = json.load(f)
             model = ForecastingDARTSMixedConcatNetController(**meta_info)
         model.load_state_dict(torch.load(base_path / f'model_weights.pth', map_location=device))
+        model.update_candidate_flags()
         return model
 
 
@@ -699,6 +796,7 @@ class ForecastingGDASMixedParallelNetController(ForecastingAbstractMixedNetContr
                 meta_info = json.load(f)
             model = ForecastingGDASMixedParallelNetController(**meta_info)
         model.load_state_dict(torch.load(base_path / f'model_weights.pth', map_location=device))
+        model.update_candidate_flags()
         return model
 
 
@@ -715,4 +813,5 @@ class ForecastingGDASMixedConcatNetController(ForecastingAbstractMixedNetControl
                 meta_info = json.load(f)
             model = ForecastingGDASMixedConcatNetController(**meta_info)
         model.load_state_dict(torch.load(base_path / f'model_weights.pth', map_location=device))
+        model.update_candidate_flags()
         return model

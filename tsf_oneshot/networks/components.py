@@ -200,6 +200,22 @@ class SearchDARTSDecoder(SearchDARTSEncoder):
         return cell_out
 
 
+class LinearDecoder(nn.Module):
+    def __init__(self, window_size: int, forecasting_horizon):
+        """
+        A naive Linear decoder that maps the decoder to a simple linear layer
+        :param window_size:
+        :param forecasting_horizon:
+        """
+        super(LinearDecoder, self).__init__()
+        self.window_size = window_size
+        self.forecasting_horizon = forecasting_horizon
+        self.linear_decoder = nn.Linear(window_size, forecasting_horizon)
+
+    def forward(self, net_encoder_output: torch.Tensor, **kwargs):
+        return self.linear_decoder(net_encoder_output.permute(0, 2, 1)).permute(0, 2, 1)
+
+
 class SearchGDASDecoder(SearchDARTSDecoder):
     @staticmethod
     def get_cell(**kwargs):
@@ -254,6 +270,7 @@ class AbstractFlatEncoder(AbstractSearchEncoder):
             cells.append(cell)
             if num_edges is None:
                 num_edges = cell.num_edges
+                edge2index  = cell.edge2index
         self.cells = nn.ModuleList(cells)
         self.edge2index = edge2index
 

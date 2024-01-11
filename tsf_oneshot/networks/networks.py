@@ -8,7 +8,9 @@ from tsf_oneshot.networks.components import (
     SearchGDASFlatEncoder,
     SearchDARTSFlatEncoder,
     SearchDARTSEncoder,
-    SearchDARTSDecoder)
+    SearchDARTSDecoder,
+    LinearDecoder
+)
 from tsf_oneshot.prediction_heads import MixedHead, MixedFlatHEADAS
 from tsf_oneshot.networks.utils import get_head_out
 from tsf_oneshot.networks.combined_net_utils import (
@@ -17,11 +19,18 @@ from tsf_oneshot.networks.combined_net_utils import (
     forward_parallel_net
 )
 
+DECODER_MAPS = {
+    'seq': 'seq_decoder',
+    'linear': 'linear_decoder'
+}
+
 
 class ForecastingAbstractNetwork(nn.Module):
     def __init__(self,
                  d_input_past: int,
                  d_input_future: int,
+                 window_size: int,
+                 forecasting_horizon: int,
                  d_model: int,
                  d_output: int,
                  n_cells: int,
@@ -32,6 +41,7 @@ class ForecastingAbstractNetwork(nn.Module):
                  OPS_kwargs: dict[str, dict],
                  HEADs: list[str],
                  HEADs_kwargs: dict[str, dict],
+                 DECODERS: list[str] = ['seq'],
                  forecast_only: bool = False
                  ):
         super(ForecastingAbstractNetwork, self).__init__()
@@ -47,6 +57,11 @@ class ForecastingAbstractNetwork(nn.Module):
         self.PRIMITIVES_decoder = PRIMITIVES_decoder
         self.HEADs = HEADs
         self.forecast_only = forecast_only
+
+        self.DECODERS = DECODERS
+
+        self.window_size = window_size
+        self.forecasting_horizon = forecasting_horizon
 
         encoder_kwargs = dict(d_input=d_input_past,
                               d_model=d_model,
@@ -69,18 +84,20 @@ class ForecastingAbstractNetwork(nn.Module):
                               PRIMITIVES=PRIMITIVES_decoder,
                               OPS_kwargs=OPS_kwargs
                               )
-
-        self.decoder: SearchDARTSDecoder = self.get_decoder(
-            **decoder_kwargs
-        )
+        if 'seq' in DECODERS:
+            self.seq_decoder: SearchDARTSDecoder = self.get_decoder(
+                **decoder_kwargs
+            )
+        if 'linear' in DECODERS:
+            self.linear_decoder: LinearDecoder = LinearDecoder(window_size, forecasting_horizon)
+        self.decoder = [getattr(self, DECODER_MAPS[decoder]) for decoder in DECODERS]
 
         self.heads = MixedHead(d_model=d_model, d_output=d_output, PRIMITIVES=HEADs, OPS_kwargs=HEADs_kwargs)
 
-        self.encoder_n_edges = self.encoder.num_edges
-        self.decoder_n_edges = self.decoder.num_edges
+        self.n_cell_nodes = n_nodes + n_cell_input_nodes
+        self.n_edges = self.encoder.num_edges
 
-        self.encoder_edge2index = self.encoder.edge2index
-        self.decoder_edge2index = self.decoder.edge2index
+        self.edge2index = self.encoder.edge2index
 
     @staticmethod
     def get_encoder(**encoder_kwargs):
@@ -90,22 +107,31 @@ class ForecastingAbstractNetwork(nn.Module):
     def get_decoder(**decoder_kwargs):
         raise NotImplementedError
 
+    def get_decoder_out(self,
+                        arch_p_decoder_choice: torch.Tensor,
+                        decoder_forward_kwargs: dict):
+        raise NotImplementedError
+
     def forward(self, x_past: torch.Tensor,
                 x_future: torch.Tensor,
                 arch_p_encoder: torch.Tensor,
                 arch_p_decoder: torch.Tensor,
-                arch_p_heads: torch.Tensor):
-        cell_encoder_out, cell_intermediate_steps = self.encoder(x_past, w_dag=arch_p_encoder)
-
-        cell_decoder_out = self.decoder(x=x_future,
+                arch_p_heads: torch.Tensor,
+                arch_p_decoder_choice):
+        net_encoder_out, cell_intermediate_steps = self.encoder(x_past, w_dag=arch_p_encoder)
+        decoder_forward_kwargs = dict(x=x_future,
                                         w_dag=arch_p_decoder,
                                         cells_encoder_output=cell_intermediate_steps,
-                                        net_encoder_output=cell_encoder_out)
+                                        net_encoder_output=net_encoder_out)
+
+        cell_decoder_out = self.get_decoder_out(arch_p_decoder_choice=arch_p_decoder_choice[0],
+                                                decoder_forward_kwargs=decoder_forward_kwargs)
+
         forecast = get_head_out(cell_decoder_out, heads=self.heads, head_idx=None)
 
         if self.forecast_only:
             return forecast
-        backcast = get_head_out(cell_encoder_out, heads=self.heads, head_idx=None)
+        backcast = get_head_out(net_encoder_out, heads=self.heads, head_idx=None)
         return backcast, forecast
 
 
@@ -118,6 +144,12 @@ class ForecastingDARTSNetwork(ForecastingAbstractNetwork):
     def get_decoder(**decoder_kwargs):
         return SearchDARTSDecoder(**decoder_kwargs)
 
+    def get_decoder_out(self,
+                        arch_p_decoder_choice: torch.Tensor,
+                        decoder_forward_kwargs: dict
+                        ):
+        return sum(w * de(**decoder_forward_kwargs) for w, de in zip(arch_p_decoder_choice, self.decoder) if w > 0.)
+
 
 class ForecastingGDASNetwork(ForecastingAbstractNetwork):
     @staticmethod
@@ -127,6 +159,20 @@ class ForecastingGDASNetwork(ForecastingAbstractNetwork):
     @staticmethod
     def get_decoder(**decoder_kwargs):
         return SearchGDASDecoder(**decoder_kwargs)
+
+    def get_decoder_out(self,
+                        arch_p_decoder_choice: torch.Tensor,
+                        decoder_forward_kwargs: dict
+                        ):
+
+        hardwts, index = arch_p_decoder_choice
+        argmaxs = index.item()
+
+        weigsum = sum(
+            hardwts[_ie] for _ie in range(self.n_ops) if _ie != argmaxs
+        )
+        cell_decoder_out = self.decoder[argmaxs](**decoder_forward_kwargs) + weigsum
+        return cell_decoder_out
 
 
 class ForecastingFlatAbstractNetwork(nn.Module):
@@ -171,8 +217,9 @@ class ForecastingFlatAbstractNetwork(nn.Module):
         self.heads = MixedFlatHEADAS(window_size=window_size, forecasting_horizon=forecasting_horizon,
                                      PRIMITIVES=HEADs, OPS_kwargs=HEADs_kwargs)
 
-        self.encoder_n_edges = self.encoder.num_edges
-        self.encoder_edge2index = self.encoder.edge2index
+        self.n_cell_nodes = n_nodes + n_cell_input_nodes
+        self.n_edges = self.encoder.num_edges
+        self.edge2index = self.encoder.edge2index
 
     @staticmethod
     def get_encoder(**encoder_kwargs):
@@ -228,6 +275,7 @@ class ForecastingAbstractMixedNet(nn.Module):
                  n_cell_input_nodes_seq: int,
                  PRIMITIVES_encoder_seq: list[str],
                  PRIMITIVES_decoder_seq: list[str],
+                 DECODERS_seq: list[str],
 
                  OPS_kwargs_seq: dict[str, dict],
                  HEADs: list[str],
@@ -284,12 +332,11 @@ class ForecastingAbstractMixedNet(nn.Module):
         self.forecast_only_flat = forecast_only_flat
         self.forecast_only_seq = forecast_only_seq
 
-        self.n_nodes_seq = n_nodes_seq
-        self.n_nodes_flat = n_nodes_flat
+        self.n_cell_nodes_seq = n_nodes_seq + n_cell_input_nodes_seq
+        self.n_cell_nodes_flat = n_nodes_flat + n_cell_input_nodes_flat
 
-        self.encoder_edge2index_seq = self.seq_net.encoder.edge2index
-        self.decoder_edge2index_seq = self.seq_net.decoder.edge2index
-        self.encoder_edge2index_flat = self.flat_net.encoder.edge2index
+        self.edge2index_seq = self.seq_net.edge2index
+        self.edge2index_flat = self.flat_net.edge2index
 
     def validate_input_kwargs(self, kwargs):
         return kwargs
@@ -298,12 +345,14 @@ class ForecastingAbstractMixedNet(nn.Module):
         raise NotImplementedError
 
     def get_seq_forward_kwargs(self, arch_p_encoder_seq: torch.Tensor,
-                       arch_p_decoder_seq: torch.Tensor,
-                       arch_p_heads_seq: torch.Tensor):
+                               arch_p_decoder_seq: torch.Tensor,
+                               arch_p_heads_seq: torch.Tensor,
+                               arch_p_decoder_choice_seq):
         return dict(
             arch_p_encoder=arch_p_encoder_seq,
             arch_p_decoder=arch_p_decoder_seq,
-            arch_p_heads=arch_p_heads_seq
+            arch_p_heads=arch_p_heads_seq,
+            arch_p_decoder_choice=arch_p_decoder_choice_seq
         )
 
     def get_flat_forward_kwargs(self,
@@ -322,8 +371,12 @@ class ForecastingAbstractMixedNet(nn.Module):
                 arch_p_heads_seq: torch.Tensor,
                 arch_p_encoder_flat: torch.Tensor,
                 arch_p_heads_flat: torch.Tensor,
+                arch_p_decoder_choice_seq: torch.Tensor,
+                arch_p_net: torch.Tensor | None = None
                 ):
-        seq_kwargs = self.get_seq_forward_kwargs(arch_p_encoder_seq, arch_p_decoder_seq, arch_p_heads_seq)
+        seq_kwargs = self.get_seq_forward_kwargs(
+            arch_p_encoder_seq, arch_p_decoder_seq, arch_p_heads_seq, arch_p_decoder_choice_seq
+        )
 
         flat_kwargs = self.get_flat_forward_kwargs(arch_p_encoder_flat, arch_p_heads_flat)
         return self.get_net_out(flat_net=self.flat_net,
@@ -333,7 +386,9 @@ class ForecastingAbstractMixedNet(nn.Module):
                                 forecast_only_seq=self.forecast_only_seq,
                                 forecast_only_flat=self.forecast_only_flat,
                                 seq_kwargs=seq_kwargs,
-                                flat_kwargs=flat_kwargs)
+                                flat_kwargs=flat_kwargs,
+                                out_weights=arch_p_net[0],
+                                )
 
 
 class DARTSMixedNetMixin:

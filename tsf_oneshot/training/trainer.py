@@ -14,7 +14,8 @@ from tsf_oneshot.networks.architect import Architect
 from tsf_oneshot.networks.network_controller import (
     ForecastingDARTSNetworkController,
     ForecastingGDASNetworkController,
-    AbstractForecastingNetworkController
+    AbstractForecastingNetworkController,
+    N_RESERVED_EDGES_PER_NODE,
 )
 
 import wandb
@@ -99,6 +100,7 @@ class ForecastingTrainer:
                  val_loader: torch.utils.data.DataLoader,
                  val_eval_loader: torch.utils.data.DataLoader | None,
                  proj_intv: int,
+                 proj_intv_nodes: int,
                  window_size: int,
                  n_prediction_steps: int,
                  search_sample_interval: int,
@@ -118,6 +120,7 @@ class ForecastingTrainer:
 
         self.val_eval_loader = val_eval_loader
         self.proj_intv = proj_intv
+        self.proj_intv_nodes = proj_intv_nodes
 
         self.target_scaler = target_scaler
 
@@ -367,7 +370,7 @@ class ForecastingTrainer:
 
         for (test_X, test_y) in tqdm(test_loader):
             x_past_test, x_future_test, scale_value_test = self.preprocessing(test_X)
-            target_test = test_y['future_targets'].float()
+            target_test = test_y['future_targets'][:, self.target_indices].float()
             n_data = len(target_test)
 
             self.model.eval()
@@ -429,9 +432,9 @@ class ForecastingTrainer:
         w_optimizer.load_state_dict(trainer_info['w_optimizer'])
         a_optimizer.load_state_dict(trainer_info['a_optimizer'])
 
-        if lr_scheduler_w is not None:
+        if lr_scheduler_w is not None and 'lr_scheduler_w' in trainer_info:
             lr_scheduler_w.load_state_dict(trainer_info['lr_scheduler_w'])
-        if lr_scheduler_a is not None:
+        if lr_scheduler_a is not None and 'lr_scheduler_a' in trainer_info:
             lr_scheduler_a.load_state_dict(trainer_info['lr_scheduler_a'])
 
         return trainer_info.get('epoch', 0)
@@ -450,42 +453,104 @@ class ForecastingTrainer:
             optim_groups=self.model.get_weight_optimizer_parameters(cfg_w_optimizer.weight_decay),
             wd_in_p_groups=True
         )
-        num_edges = len(self.model.candidate_flags)
+        num_edges = sum(self.model.candidate_flag_ops)
         tune_epochs = self.proj_intv * (num_edges - 1)
+        # prune the objects
         for epoch in range(tune_epochs):
             if epoch % self.proj_intv == 0 or epoch == tune_epochs - 1:
-                # TODO write our own selection methods !!!
-
-                candidate_edges = np.nonzero(self.model.candidate_flags)[0]
-                selected_eid = np.random.choice(candidate_edges)
-
-                for n_edge, mask in zip(self.model.len_all_arch_p, self.model.all_masks):
-                    if selected_eid < n_edge:
+                if epoch == tune_epochs - 1:
+                    # We make decision on this only in the last itartion!
+                    selected_eid = num_edges - 1
+                else:
+                    candidate_edges = np.nonzero(self.model.candidate_flag_ops)[0]
+                    selected_eid = np.random.choice(candidate_edges)
+                selected_eid_raw = selected_eid
+                for n_edge, mask_name in zip(self.model.len_all_arch_p, self.model.all_mask_names):
+                    if 0 <= selected_eid < n_edge:
                         # in this case we have selected the correct
-                        mask_value: torch.Tensor = getattr(self.model, mask)
-                        n_ops = mask_value.shape[-1]
+                        mask: torch.Tensor = getattr(self.model, mask_name)
+                        n_ops = mask.shape[-1]
                         best_opid = 0
-                        if n_ops < 1:
-                            # this should not happen!
+                        if n_ops <= 1:
                             continue
-                        loss_best = np.inf
+                        loss_best = -np.inf
                         for op_id in range(n_ops):
-                            mask_value[selected_eid] = -torch.inf
-                            mask_value[selected_eid, op_id] = 0
+                            # we remove the corresponding operations.
+                            mask[selected_eid] = 0
+                            mask[selected_eid, op_id] = -torch.inf
 
                             loss = self.evaluate(self.val_eval_loader, epoch=op_id, loader_type='proj')['MSE loss']
-                            if loss < loss_best:
+                            if loss > loss_best:
                                 loss_best = loss
                                 best_opid = op_id
                         # we have evaluated all the operations, now we can safely return
-                        self.model.candidate_flags[selected_eid] = False
-                        mask_value[selected_eid] = -torch.inf
-                        mask_value[selected_eid, best_opid] = 0
+                        self.model.candidate_flag_ops[selected_eid_raw] = False
+                        mask[selected_eid] = -torch.inf
+                        mask[selected_eid, best_opid] = 0
                         break
                     else:
                         selected_eid -= n_edge
             self.train_epoch(epoch)
 
+    def pt_project_topology(self):
+        num_nodes = sum(self.model.candidate_flag_nodes)
+
+        tune_epochs = self.proj_intv_nodes * (num_nodes - 1)
+
+        # topology selection
+        def set_value_for_mask(select_e_ids, new_value):
+            raw_values = []
+            for i, selected_eid in enumerate(select_e_ids):
+                # A function used for mask or unmask an edge
+                for n_edge, mask_name in zip(self.model.len_all_arch_p, self.model.all_mask_names):
+                    if 0 <= selected_eid < n_edge:
+                        # in this case we have selected the correct
+                        mask: nn.Parameter = getattr(self.model, mask_name)
+                        # mask out the edge
+                        mask_raw = mask.data[selected_eid].clone()
+                        raw_values.append(mask_raw)
+                        if isinstance(new_value, list):
+                            mask.data[selected_eid].copy_(new_value[i])
+                        else:
+                            mask.data[selected_eid].copy_(new_value)
+                    else:
+                        selected_eid -= n_edge
+            return raw_values
+
+        for epoch in range(tune_epochs):
+            if epoch % self.proj_intv_nodes == 0 or epoch == tune_epochs - 1:
+                candidate_nodes = np.nonzero(self.model.candidate_flag_nodes)[0]
+                selected_nid = np.random.choice(candidate_nodes)
+                selected_nid_raw = selected_nid
+                for n_nodes in self.model.len_all_nodes:
+                    if N_RESERVED_EDGES_PER_NODE < selected_nid < n_nodes:
+                        # select all candidate nodes:
+                        all_losses = []
+                        for j in range(selected_nid):
+                            node = f'{selected_nid}<-{j}'
+                            e_ids = self.model.edges2index[node]
+                            # mask out all the related nodes
+                            mask_raw_value = set_value_for_mask(e_ids, -torch.inf)
+                            loss = self.evaluate(self.val_eval_loader, epoch=j, loader_type='proj')['MSE loss']
+                            all_losses.append(loss)
+                            # return all the nodes
+                            set_value_for_mask(e_ids, mask_raw_value)
+
+                        loss_argsort = np.argsort(all_losses)[::-1][:N_RESERVED_EDGES_PER_NODE]
+                        for j in loss_argsort:
+                            # mask out all the unrelated edges.
+                            node = f'{selected_nid}<-{j}'
+                            e_ids = self.model.edges2index[node]
+                            set_value_for_mask(e_ids, -torch.inf)
+
+                        self.model.candidate_flag_nodes[selected_nid_raw] = False
+                        break
+                    elif selected_nid <= N_RESERVED_EDGES_PER_NODE:
+                         # normally this should not happen
+                        break
+                    else:
+                        selected_nid -= n_nodes
+            self.train_epoch(epoch)
 
 class ForecastingDARTSSecondOrderTrainer(ForecastingTrainer):
     def __init__(self,
