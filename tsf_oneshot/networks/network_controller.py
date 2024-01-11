@@ -416,7 +416,7 @@ class AbstractForecastingFlatNetworkController(AbstractForecastingNetworkControl
         self.backcast_loss_ration = backcast_loss_ration
         self.forecast_only = forecast_only
 
-        self.arch_p_encoder = nn.Parameter(1e-3 * torch.randn(self.net.encoder_n_edges, len(PRIMITIVES_encoder)))
+        self.arch_p_encoder = nn.Parameter(1e-3 * torch.randn(self.net.n_edges, len(PRIMITIVES_encoder)))
         self.arch_p_heads = nn.Parameter(1e-3 * torch.randn(1, len(HEADs)))
 
         # setup alphas list
