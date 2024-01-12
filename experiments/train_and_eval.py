@@ -407,7 +407,7 @@ def main(cfg: omegaconf.DictConfig):
 
     for epoch in range(epoch_start, n_epochs):
         w_loss = trainer.train_epoch(epoch)
-        if epoch in [29, 59, 89, 119, 149]:
+        if epoch in [99]:
             trainer.save(out_path / f'epoch_{epoch}', epoch=epoch)
         if not torch.isnan(w_loss):
             trainer.save(out_path, epoch=epoch)
@@ -420,9 +420,11 @@ def main(cfg: omegaconf.DictConfig):
                     trainer.save(out_neg, epoch=epoch)
         else:
             break
+    trainer.save(out_path / f"without_selection", epoch=epoch)
     if search_type == 'darts':
         trainer.pt_project(cfg)
         trainer.save(out_path, epoch=n_epochs - 1)
+        trainer.save(out_path / f"after_op_selection", epoch=epoch)
         trainer.pt_project_topology()
         trainer.save(out_path, epoch=n_epochs - 1)
 

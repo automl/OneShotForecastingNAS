@@ -215,7 +215,7 @@ class ForecastingTrainer:
 
         return x_past, x_future[:, self.target_indices], (loc, scale)
 
-    def train_epoch(self, epoch: int):
+    def train_epoch(self, epoch: int, update_alphas:bool=True):
         self.model.train()
 
         for (train_X, train_y), (val_X, val_y) in tzip(self.train_loader, self.val_loader):
@@ -223,8 +223,9 @@ class ForecastingTrainer:
             torch.cuda.empty_cache()
             w_loss, _ = self.update_weights(train_X, train_y)
 
-            torch.cuda.empty_cache()
-            self.update_alphas(val_X, val_y)
+            if update_alphas:
+                torch.cuda.empty_cache()
+                self.update_alphas(val_X, val_y)
 
             """
             w_loss, prediction_train = self.update_weights(train_X, train_y)
@@ -310,6 +311,7 @@ class ForecastingTrainer:
         self.scaler.update()
 
         self.w_optimizer.zero_grad()
+        self.a_optimizer.zero_grad()
 
         if self.lr_scheduler_w is not None and self.lr_scheduler_w_type == LR_SCHEDULER_TYPE.epoch:
             self.lr_scheduler_w.step()
@@ -356,6 +358,7 @@ class ForecastingTrainer:
 
         self.scaler.step(self.a_optimizer)
         self.scaler.update()
+        self.w_optimizer.zero_grad()
         self.a_optimizer.zero_grad()
 
         if self.lr_scheduler_a is not None and self.lr_scheduler_a_type == LR_SCHEDULER_TYPE.epoch:
@@ -493,6 +496,7 @@ class ForecastingTrainer:
             self.train_epoch(epoch)
 
     def pt_project_topology(self):
+        # original from https://github.com/ruocwang/darts-pt
         num_nodes = sum(self.model.candidate_flag_nodes)
 
         tune_epochs = self.proj_intv_nodes * (num_nodes - 1)
@@ -513,6 +517,7 @@ class ForecastingTrainer:
                             mask.data[selected_eid].copy_(new_value[i])
                         else:
                             mask.data[selected_eid].copy_(new_value)
+                        selected_eid -= n_edge
                     else:
                         selected_eid -= n_edge
             return raw_values
@@ -522,35 +527,31 @@ class ForecastingTrainer:
                 candidate_nodes = np.nonzero(self.model.candidate_flag_nodes)[0]
                 selected_nid = np.random.choice(candidate_nodes)
                 selected_nid_raw = selected_nid
-                for n_nodes in self.model.len_all_nodes:
-                    if N_RESERVED_EDGES_PER_NODE < selected_nid < n_nodes:
-                        # select all candidate nodes:
-                        all_losses = []
-                        for j in range(selected_nid):
-                            node = f'{selected_nid}<-{j}'
-                            e_ids = self.model.edges2index[node]
-                            # mask out all the related nodes
-                            mask_raw_value = set_value_for_mask(e_ids, -torch.inf)
-                            loss = self.evaluate(self.val_eval_loader, epoch=j, loader_type='proj')['MSE loss']
-                            all_losses.append(loss)
-                            # return all the nodes
-                            set_value_for_mask(e_ids, mask_raw_value)
 
-                        loss_argsort = np.argsort(all_losses)[::-1][:N_RESERVED_EDGES_PER_NODE]
-                        for j in loss_argsort:
-                            # mask out all the unrelated edges.
-                            node = f'{selected_nid}<-{j}'
-                            e_ids = self.model.edges2index[node]
-                            set_value_for_mask(e_ids, -torch.inf)
+                # select all candidate nodes:
+                all_losses = []
+                for j in range(selected_nid):
+                    node = f'{selected_nid}<-{j}'
+                    if node in self.model.edges2index:
+                        e_ids = self.model.edges2index[node]
+                        # mask out all the related nodes
+                        mask_raw_value = set_value_for_mask(e_ids, -torch.inf)
+                        loss = self.evaluate(self.val_eval_loader, epoch=j, loader_type='proj')['MSE loss']
+                        all_losses.append(loss)
+                        # return all the nodes
+                        set_value_for_mask(e_ids, mask_raw_value)
 
-                        self.model.candidate_flag_nodes[selected_nid_raw] = False
-                        break
-                    elif selected_nid <= N_RESERVED_EDGES_PER_NODE:
-                         # normally this should not happen
-                        break
-                    else:
-                        selected_nid -= n_nodes
-            self.train_epoch(epoch)
+                loss_argsort = np.argsort(all_losses)[::-1][N_RESERVED_EDGES_PER_NODE:]
+                for j in loss_argsort:
+                    # mask out all the unrelated edges.
+                    node = f'{selected_nid}<-{j}'
+                    e_ids = self.model.edges2index[node]
+                    set_value_for_mask(e_ids, -torch.inf)
+
+                self.model.candidate_flag_nodes[selected_nid_raw] = False
+            # since all the edges only contain one value, there is no need to update alphas
+            self.train_epoch(epoch, update_alphas=False)
+
 
 class ForecastingDARTSSecondOrderTrainer(ForecastingTrainer):
     def __init__(self,
@@ -581,7 +582,7 @@ class ForecastingDARTSSecondOrderTrainer(ForecastingTrainer):
             x_past_val, x_future_val, scale_value_val = self.preprocessing(val_X)
 
             train_y = train_y[:, self.target_indices].float().to(self.device)
-            val_y = val_y[:, self.target_indices].float().to(self.device)
+            val_y = val_y[:, self.tFarget_indices].float().to(self.device)
 
             self.a_optimizer.zero_grad()
             with torch.cuda.amp.autocast(enabled=self.amp_enable):

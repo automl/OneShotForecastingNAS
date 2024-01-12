@@ -134,7 +134,7 @@ class AbstractSearchEncoderCell(nn.Module):
         self.num_edges = len(self.edges)
 
     def extra_repr(self):
-        string = "info :: {max_nodes} nodes, inC={in_dim}, outC={out_dim}".format(
+        string = "info :: {max_nodes} nodes, d_model={d_model}".format(
             **self.__dict__
         )
         return string
@@ -569,7 +569,7 @@ class SampledEncoderCell(nn.Module):
                     op_kwargs = OPS_kwargs.get(op_name, {})
                     op = self.all_ops[op_name](self.d_model, **op_kwargs)
                     self.edges[node_str] = op
-                    k += 1
+                k += 1
 
         self.edge_keys = sorted(list(self.edges.keys()))
         self.edge2index = {key: i for i, key in enumerate(self.edge_keys)}

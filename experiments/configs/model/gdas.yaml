@@ -9,7 +9,7 @@ n_cells: 2
 n_nodes: 5
 n_cell_input_nodes: 1
 backcast_loss_ration: 0.0
-'DECODERS': ['seq', 'linear']
+DECODERS: ['seq', 'linear']
 
 model_kwargs:
   tcn:

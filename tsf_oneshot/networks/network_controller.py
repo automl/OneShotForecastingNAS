@@ -25,7 +25,8 @@ from tsf_oneshot.networks.utils import (
     gumble_sample
 )
 
-N_RESERVED_EDGES_PER_NODE=2
+N_RESERVED_EDGES_PER_NODE = 2
+
 
 class AbstractForecastingNetworkController(nn.Module):
     net_type = ForecastingDARTSNetwork
@@ -33,8 +34,8 @@ class AbstractForecastingNetworkController(nn.Module):
     def __init__(self,
                  d_input_past: int,
                  d_input_future: int,
-                 window_size:int,
-                 forecasting_horizon:int,
+                 window_size: int,
+                 forecasting_horizon: int,
                  d_model: int,
                  d_output: int,
                  n_cells: int,
@@ -103,7 +104,7 @@ class AbstractForecastingNetworkController(nn.Module):
             raise NotImplementedError
 
         self.all_arch_p_names = ['arch_p_encoder', 'arch_p_decoder', 'arch_p_heads', 'arch_p_decoder_choices']
-        
+
         self.len_all_arch_p = self.get_len_arch_p()
         self.all_mask_names = self.get_mask_names()
 
@@ -114,8 +115,8 @@ class AbstractForecastingNetworkController(nn.Module):
         self.len_all_nodes = [self.net.n_cell_nodes]
 
         self.edges2index, self.candidate_flag_nodes = self.get_edge2index()
-        
-    def _get_edge2index(self, n_nodes: int, net_edge2index, backbone_arch_names: list[str]):
+
+    def _get_edge2index(self, n_nodes: int, net_edge2index, backbone_arch_names: list[str], idx_base: int = 0):
         edge2idx = {}
         for i in range(n_nodes):
             for j in range(i):
@@ -127,13 +128,15 @@ class AbstractForecastingNetworkController(nn.Module):
                     if name in backbone_arch_names:
                         node_idx.append(idx_start + idx)
                     idx_start += p_len
-                edge2idx[node] = node_idx
+                node_ = f'{i + idx_base}<-{j}'
+                edge2idx[node_] = node_idx
         return edge2idx
-        
+
     def get_edge2index(self):
-        edge2idx = self._get_edge2index(self.net.n_cell_nodes, self.net.edge2index, ['arch_p_encoder', 'arch_p_decoder'])
+        edge2idx = self._get_edge2index(self.net.n_cell_nodes, self.net.edge2index,
+                                        ['arch_p_encoder', 'arch_p_decoder'])
         candidate_flag_nodes = [True] * self.net.n_cell_nodes
-        candidate_flag_nodes[:N_RESERVED_EDGES_PER_NODE] = [False] * N_RESERVED_EDGES_PER_NODE
+        candidate_flag_nodes[:N_RESERVED_EDGES_PER_NODE + 1] = [False] * (N_RESERVED_EDGES_PER_NODE + 1)
         return edge2idx, candidate_flag_nodes
 
     def get_len_arch_p(self):
@@ -254,7 +257,7 @@ class AbstractForecastingNetworkController(nn.Module):
     @torch.no_grad()
     def grad_norm_weights(self):
         total_norm = 0.0
-        for name, par in self.named_parameters():
+        for name, par in self.named_weights():
             if par.grad is not None:
                 param_norm = par.grad.detach().data.norm(2)
                 total_norm += param_norm.item() ** 2
@@ -267,6 +270,9 @@ class AbstractForecastingNetworkController(nn.Module):
         for name, par in self.named_arch_parameters():
             if par.grad is not None:
                 param_norm = par.grad.detach().data.norm(2)
+                if torch.isnan(param_norm):
+                    import pdb
+                    pdb.set_trace()
                 total_norm += param_norm.item() ** 2
         total_norm = total_norm ** 0.5
         return total_norm
@@ -302,8 +308,8 @@ class ForecastingDARTSNetworkController(AbstractForecastingNetworkController):
     def __init__(self,
                  d_input_past: int,
                  d_input_future: int,
-                 window_size:int,
-                 forecasting_horizon:int,
+                 window_size: int,
+                 forecasting_horizon: int,
                  d_model: int,
                  d_output: int,
                  n_cells: int,
@@ -445,7 +451,7 @@ class AbstractForecastingFlatNetworkController(AbstractForecastingNetworkControl
 
         self.len_all_nodes = [self.net.n_cell_nodes]
         self.edges2index, self.candidate_edges = self.get_edge2index()
-        
+
     def get_all_wags(self):
         w_dag_encoder = self.get_w_dag(self.arch_p_encoder)
         w_dag_head = self.get_w_dag(self.arch_p_heads)
@@ -462,7 +468,7 @@ class ForecastingDARTSFlatNetworkController(AbstractForecastingFlatNetworkContro
     def __init__(self,
                  window_size: int,
                  forecasting_horizon: int,
-                 d_output:int,
+                 d_output: int,
                  n_cells: int,
                  n_nodes: int,
                  n_cell_input_nodes: int,
@@ -664,20 +670,25 @@ class ForecastingAbstractMixedNetController(AbstractForecastingNetworkController
         self.len_all_nodes = [self.net.n_cell_nodes_seq, self.net.n_cell_nodes_flat]
 
         self.edges2index, self.candidate_flag_nodes = self.get_edge2index()
-        
+
         # we set mask net as an independent value, since we might need both networks as our super net
         self.mask_net = nn.Parameter(torch.zeros_like(self.arch_p_nets), requires_grad=False)
-        
+
     def get_edge2index(self):
+        edge2idx = {}
         edge2idx = self._get_edge2index(self.net.n_cell_nodes_seq, self.net.edge2index_seq,
-                                        ['arch_p_encoder_seq', 'arch_p_decoder_seq'])
+                                         ['arch_p_encoder_seq', 'arch_p_decoder_seq'])
         candidate_flag_nodes_seq = [True] * self.net.n_cell_nodes_seq
-        candidate_flag_nodes_seq[:N_RESERVED_EDGES_PER_NODE] = [False] * N_RESERVED_EDGES_PER_NODE
-        
-        edge2idx.update(self._get_edge2index(self.net.n_cell_nodes_flat, self.net.edge2index_flat,
-                                        ['arch_p_encoder_flat', 'arch_p_decoder_flat']))
+        candidate_flag_nodes_seq[:N_RESERVED_EDGES_PER_NODE + 1] = [False] * (N_RESERVED_EDGES_PER_NODE + 1)
+
+        edge2idx.update(self._get_edge2index(
+            self.net.n_cell_nodes_flat, self.net.edge2index_flat,
+            ['arch_p_encoder_flat', 'arch_p_decoder_flat'],
+            idx_base=len(candidate_flag_nodes_seq))
+        )
+
         candidate_flag_nodes_flat = [True] * self.net.n_cell_nodes_flat
-        candidate_flag_nodes_flat[:N_RESERVED_EDGES_PER_NODE] = [False] * N_RESERVED_EDGES_PER_NODE
+        candidate_flag_nodes_flat[:N_RESERVED_EDGES_PER_NODE + 1] = [False] * (N_RESERVED_EDGES_PER_NODE + 1)
         return edge2idx, candidate_flag_nodes_seq + candidate_flag_nodes_flat
 
     def validate_input_kwargs(self, kwargs):

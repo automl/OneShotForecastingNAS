@@ -136,7 +136,7 @@ class SampledNet(nn.Module):
                  OPS_kwargs: dict[str, dict],
                  HEAD: str,
                  HEADs_kwargs: dict[str, dict],
-                 DECODERS: list[str] = ['seq'],
+                 DECODER: str = 'seq',
                  backcast_loss_ration: float = 0.0
                  ):
         super(SampledNet, self).__init__()
@@ -152,7 +152,7 @@ class SampledNet(nn.Module):
             PRIMITIVES_encoder=PRIMITIVES_encoder,
             PRIMITIVES_decoder=PRIMITIVES_decoder,
             HEAD=HEAD, HEADs_kwargs=HEADs_kwargs,
-            DECODERS=DECODERS,
+            DECODER=DECODER,
             backcast_loss_ration=backcast_loss_ration,
         )
         self.d_input_past = d_input_past
@@ -174,7 +174,7 @@ class SampledNet(nn.Module):
         self.HEAD = HEAD
         self.HEADs_kwargs = HEADs_kwargs
 
-        self.DECODERS = DECODERS
+        self.DECODER = DECODER
 
         forecast_only = backcast_loss_ration == 0.0
         self.forecast_only = forecast_only
@@ -205,7 +205,7 @@ class SampledNet(nn.Module):
                               has_edges=has_edges_decoder,
                               OPS_kwargs=OPS_kwargs
                               )
-        if DECODERS[0] == 'seq':
+        if DECODER == 'seq':
             self.decoder: SampledDecoder = SampledDecoder(
                 **decoder_kwargs
             )
@@ -450,7 +450,7 @@ class AbstractMixedSampledNet(SampledNet):
                  PRIMITIVES_encoder_seq: list[str],
                  PRIMITIVES_decoder_seq: list[str],
                  OPS_kwargs_seq: dict[str, dict],
-                 DECODERS_seq: list[str],
+                 DECODER_seq: str,
 
                  HEAD: str,
                  HEADs_kwargs_seq: dict[str, dict],
@@ -536,7 +536,7 @@ class MixedParallelSampledNet(AbstractMixedSampledNet):
             flat_net=self.flat_net,
             seq_net=self.seq_net,
             x_past=x_past,
-            x_future=x_future
+            x_future=x_future,
         )
 
 
@@ -566,5 +566,5 @@ class MixedConcatSampledNet(AbstractMixedSampledNet):
             flat_net=self.flat_net,
             seq_net=self.seq_net,
             x_past=x_past,
-            x_future=x_future
+            x_future=x_future,
         )

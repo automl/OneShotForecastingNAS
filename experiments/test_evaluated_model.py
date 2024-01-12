@@ -117,8 +117,8 @@ def main(cfg: omegaconf.DictConfig):
     ]
     split = regenerate_splits(dataset, val_share=None, splits_ms=split_ms)
     train_data_loader, val_data_loader, test_data_loader = get_dataloader(
-        dataset=dataset, splits=split, batch_size=128,
-        #num_batches_per_epoch=cfg.benchmark.data_loader.num_batches_per_epoch,
+        dataset=dataset, splits=split, batch_size=cfg.benchmark.dataloader.batch_size,
+        #num_batches_per_epoch=cfg.benchmark.dataloader.num_batches_per_epoch,
         num_batches_per_epoch=500,
         #num_batches_per_epoch=None,
         window_size=window_size,
@@ -138,7 +138,9 @@ def main(cfg: omegaconf.DictConfig):
     if model_type == 'seq':
         operations_encoder, has_edges_encoder = get_optimized_archs(saved_data_info, 'arch_p_encoder', 'mask_encoder')
         operations_decoder, has_edges_decoder = get_optimized_archs(saved_data_info, 'arch_p_decoder', 'mask_decoder')
-        head_idx, _ = get_optimized_archs(saved_data_info, 'arch_p_heads', 'mask_head')
+        decoder_choice, _ = get_optimized_archs(saved_data_info, 'arch_p_decoder_choices', 'mask_decoder_choices')
+        head_idx, _ = get_optimized_archs(saved_data_info, 'arch_p_heads', 'mask_heads')
+
         del saved_data_info
 
         cfg_model = omegaconf.OmegaConf.to_container(cfg.model, resolve=True)
@@ -152,6 +154,9 @@ def main(cfg: omegaconf.DictConfig):
 
         head_idx = head_idx[0]
         HEAD = list(cfg.model.HEADs)[head_idx]
+
+        decoder_choice = decoder_choice[0]
+        DECODER = list(cfg.model.DECODERS)[decoder_choice]
         net_init_kwargs = {
             'd_input_past': d_input_past,
             'window_size': window_size,
@@ -169,6 +174,7 @@ def main(cfg: omegaconf.DictConfig):
             'n_cell_input_nodes': int(cfg.model.n_cell_input_nodes),
             'PRIMITIVES_encoder': list(cfg.model.PRIMITIVES_encoder),
             'PRIMITIVES_decoder': list(cfg.model.PRIMITIVES_decoder),
+            'DECODER': DECODER,
             'HEAD': HEAD,
             'HEADs_kwargs': heads_kwargs,
         }
@@ -176,7 +182,7 @@ def main(cfg: omegaconf.DictConfig):
 
     elif model_type == 'flat':
         operations_encoder, has_edges_encoder = get_optimized_archs(saved_data_info, 'arch_p_encoder', 'mask_encoder')
-        head_idx, _ = get_optimized_archs(saved_data_info, 'arch_p_heads', 'mask_head')
+        head_idx, _ = get_optimized_archs(saved_data_info, 'arch_p_heads', 'mask_heads')
         del saved_data_info
         torch.cuda.empty_cache()
 
@@ -214,12 +220,20 @@ def main(cfg: omegaconf.DictConfig):
         operations_encoder_flat, has_edges_encoder_flat = get_optimized_archs(
             saved_data_info, 'arch_p_encoder_flat', 'mask_encoder_flat'
         )
-        head, _ = get_optimized_archs(saved_data_info, 'arch_p_heads', 'mask_head')
+        decoder_choice_seq, _ = get_optimized_archs(saved_data_info, 'arch_p_decoder_choices_seq',
+                                                    'mask_decoder_choices_seq')
+        head, _ = get_optimized_archs(saved_data_info, 'arch_p_heads', 'mask_heads')
+
+        import pdb
+        pdb.set_trace()
 
         del saved_data_info
 
         head_idx = head[0]
         HEAD = list(cfg.model.HEADs)[head_idx]
+
+        decoder_choice_seq = decoder_choice_seq[0]
+        DECODER_seq = list(cfg.model.seq_model.DECODERS)[decoder_choice_seq]
 
         cfg_model = omegaconf.OmegaConf.to_container(cfg.model, resolve=True)
 
@@ -249,6 +263,7 @@ def main(cfg: omegaconf.DictConfig):
                                has_edges_decoder_seq=has_edges_decoder_seq,
                                PRIMITIVES_encoder_seq=list(cfg.model.seq_model.PRIMITIVES_encoder),
                                PRIMITIVES_decoder_seq=list(cfg.model.seq_model.PRIMITIVES_decoder),
+                               DECODER_seq=DECODER_seq,
 
                                OPS_kwargs_seq=ops_kwargs_seq,
                                backcast_loss_ration_seq=float(cfg.model.seq_model.get('backcast_loss_ration', 0.0)),
