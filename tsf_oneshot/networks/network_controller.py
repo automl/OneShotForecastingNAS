@@ -270,9 +270,6 @@ class AbstractForecastingNetworkController(nn.Module):
         for name, par in self.named_arch_parameters():
             if par.grad is not None:
                 param_norm = par.grad.detach().data.norm(2)
-                if torch.isnan(param_norm):
-                    import pdb
-                    pdb.set_trace()
                 total_norm += param_norm.item() ** 2
         total_norm = total_norm ** 0.5
         return total_norm
