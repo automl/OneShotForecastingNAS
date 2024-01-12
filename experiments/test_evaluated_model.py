@@ -224,9 +224,6 @@ def main(cfg: omegaconf.DictConfig):
                                                     'mask_decoder_choices_seq')
         head, _ = get_optimized_archs(saved_data_info, 'arch_p_heads', 'mask_heads')
 
-        import pdb
-        pdb.set_trace()
-
         del saved_data_info
 
         head_idx = head[0]
