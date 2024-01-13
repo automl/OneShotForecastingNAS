@@ -19,7 +19,6 @@ from tsf_oneshot.cells.cells import (
 from tsf_oneshot.cells.ops import PRIMITIVES_Encoder, PRIMITIVES_FLAT_ENCODER
 from tsf_oneshot.cells.encoders.components import _Chomp1d
 
-
 class EmbeddingLayer(nn.Module):
     # https://github.com/cure-lab/LTSF-Linear/blob/main/layers/Embed.py
     def __init__(self, c_in, d_model, kernel_size=3):
@@ -312,20 +311,21 @@ class SearchDARTSFlatEncoder(AbstractFlatEncoder):
 
     def forward(self, x: torch.Tensor, w_dag: torch.Tensor, **kwargs):
         # we always transform the input multiple_series map into independent single series input
-        batch_size = x.shape[0]
+
         x = x[:, :, :self.d_output]
-        # This result in a feature map of size [B*N, L, 1]
-        past_targets = torch.transpose(x, -1, -2).flatten(0, 1)
-        future_targets = torch.zeros([past_targets.shape[0], self.forecasting_horizon], device=past_targets.device,
+        # This result in a feature map of size [B, N, L, 1]
+        past_targets = torch.transpose(x, -1, -2)
+
+        future_targets = torch.zeros([*past_targets.shape[:-1], self.forecasting_horizon], device=past_targets.device,
                                      dtype=past_targets.dtype)
         embedding = torch.cat(
-            [past_targets, future_targets], dim=1
+            [past_targets, future_targets], dim=-1
         )
         states = [embedding]
 
         cell_out = self.cells_forward(states, w_dag)
 
-        cell_out = cell_out.unflatten(0, (batch_size, -1)).transpose(-1, -2)
+        cell_out = cell_out.transpose(-1, -2)
         return cell_out
 
     def cells_forward(self, states: list[torch], w_dag: torch.Tensor, **kwargs):
