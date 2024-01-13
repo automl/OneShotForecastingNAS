@@ -15,7 +15,7 @@ from autoPyTorch.pipeline.components.setup.forecasting_target_scaling.utils impo
 from datasets import get_LTSF_dataset, get_monash_dataset
 from datasets.get_data_loader import get_forecasting_dataset, get_dataloader, regenerate_splits
 
-from tsf_oneshot.training.samplednet_trainer import SampledForecastingNetTrainer
+from tsf_oneshot.training.samplednet_trainer import SampledForecastingNetTrainer, EarlyStopping
 from tsf_oneshot.networks.sampled_net import SampledNet, SampledFlatNet, MixedParallelSampledNet, MixedConcatSampledNet
 from tsf_oneshot.training.utils import get_optimizer, get_lr_scheduler
 
@@ -315,16 +315,24 @@ def main(cfg: omegaconf.DictConfig):
         amp_enable=cfg.train.amp_enable
     )
 
+    early_stopping = EarlyStopping(20)
+
     epoch_start = 0
     #if (out_path / 'SampledNet' / 'Model').exists():
     #    epoch_start = trainer.load(out_path, model=model, w_optimizer=w_optimizer, lr_scheduler_w=lr_scheduler)
     for epoch in range(epoch_start, cfg.train.n_epochs):
-        eval_res = trainer.train_epoch(epoch)
+        val_res, test_res = trainer.train_epoch(epoch)
         trainer.save(out_path, epoch=epoch)
 
         with open(out_path / 'eval_res.json', 'w') as f:
-            json.dump(eval_res, f)
+            json.dump(test_res, f)
 
+        do_early_stopping = early_stopping(val_res, test_res, epoch)
+        if do_early_stopping:
+            break
+
+    with open(out_path / 'eval_res.json', 'w') as f:
+        json.dump(early_stopping.best_test_loss, f)
 
 if __name__ == '__main__':
     main()
