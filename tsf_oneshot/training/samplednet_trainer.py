@@ -18,6 +18,36 @@ from tsf_oneshot.training.trainer import pad_tensor
 from tsf_oneshot.training.utils import LR_SCHEDULER_TYPE
 
 
+class EarlyStopping:
+    def __init__(self, tolerance: int = 10):
+        self.tolerance = tolerance
+        self.no_improvement = 0
+        self.best_epoch = 0
+        self.best_val_loss_mse = np.inf
+        self.best_val_loss = {}
+        self.best_test_loss = {}
+
+    def __call__(self, val_loss: dict, test_loss:dict, n_epoch: int):
+        val_loss_mse = val_loss['MSE loss']
+        if val_loss_mse < self.best_val_loss_mse:
+            self.best_val_loss_mse = val_loss_mse
+
+            self.best_val_loss = val_loss
+            self.best_test_loss = test_loss
+            self.best_epoch = n_epoch
+
+            self.no_improvement = 0
+            return False
+        else:
+            self.no_improvement += 1
+            if self.no_improvement >= self.tolerance:
+                print(f'no improvement in {self.tolerance} epochs, early stops,'
+                      f'best val loss is {self.best_val_loss},'
+                      f'best test loss is {self.best_test_loss}')
+                return True
+
+
+
 def save_images(batch_idx, var_idx, kwargs):
     train_X = kwargs['train_X']
     target_train = kwargs['target_train']
@@ -184,12 +214,12 @@ class SampledForecastingNetTrainer:
         train_res = self.evaluate(self.train_loader, epoch, 'train')
 
         val_res = self.evaluate(self.val_loader, epoch, 'val')
-        eval_res = self.evaluate(self.test_loader, epoch, 'test')
+        test_res = self.evaluate(self.test_loader, epoch, 'test')
 
         if self.lr_scheduler_w is not None and self.lr_scheduler_type == LR_SCHEDULER_TYPE.epoch:
             self.lr_scheduler_w.step()
 
-        return eval_res
+        return val_res, test_res
         #"""
 
         #self.evaluate_with_plot()
