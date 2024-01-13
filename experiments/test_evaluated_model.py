@@ -224,6 +224,8 @@ def main(cfg: omegaconf.DictConfig):
                                                     'mask_decoder_choices_seq')
         head, _ = get_optimized_archs(saved_data_info, 'arch_p_heads', 'mask_heads')
 
+        nets_weights = saved_data_info['arch_p_nets'].tolist()[0]
+
         del saved_data_info
 
         head_idx = head[0]
@@ -274,6 +276,7 @@ def main(cfg: omegaconf.DictConfig):
                                has_edges_encoder_flat=has_edges_encoder_flat,
                                PRIMITIVES_encoder_flat=list(cfg.model.flat_model.PRIMITIVES_encoder),
                                OPS_kwargs_flat=ops_kwargs_flat,
+                               nets_weights=nets_weights,
                                HEAD=HEAD,
                                HEADs_kwargs_seq=heads_kwargs_seq,
                                HEADs_kwargs_flat=heads_kwargs_flat,
