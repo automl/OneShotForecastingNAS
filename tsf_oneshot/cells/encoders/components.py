@@ -7,19 +7,22 @@ from torch.nn.utils import weight_norm
 from autoPyTorch.pipeline.components.setup.network_backbone.forecasting_backbone.components_util import \
     PositionalEncoding
 
-TCN_DEFAULT_KERNEL_SIZE=7
+TCN_DEFAULT_KERNEL_SIZE = 7
 
 
 class GRUEncoderModule(nn.Module):
-    def __init__(self, d_model: int, bias: bool = True, bidirectional: bool=False):
+    def __init__(self, d_model: int, bias: bool = True, bidirectional: bool = False):
         super(GRUEncoderModule, self).__init__()
         self.norm = nn.LayerNorm(d_model)
+        d_input = d_model
+        self.hx_encoder_layer = nn.Linear(d_model, d_model)
+
         if bidirectional:
             assert d_model % 2 == 0
-            d_model = d_model / 2
-        self.cell = nn.GRU(input_size=d_model, hidden_size=d_model, bias=bias, num_layers=1,
+            d_model = d_model // 2
+
+        self.cell = nn.GRU(input_size=d_input, hidden_size=d_model, bias=bias, num_layers=1,
                            batch_first=True, bidirectional=bidirectional)
-        self.hx_encoder_layer = nn.Linear(d_model, d_model)
         self.bidirectional = bidirectional
         self.d_model = d_model
 
@@ -27,21 +30,21 @@ class GRUEncoderModule(nn.Module):
         output, hx = self.cell(x_past, hx)
         if self.bidirectional:
             # we ask the output to be
-            output = torch.cat([output[:, :, :self.d_model], torch.flip(output[:,:,:self.d_model], dims=(1,)), -1])
-            hx = torch.cat([hx[:self.num_layers, :, :], torch.flip(hx[self.num_layers:, :, :], dims=(1,))], -1)
+            output = torch.cat([output[:, :, :self.d_model], torch.flip(output[:, :, :self.d_model], dims=(1,))], -1)
+            hx = torch.cat([hx[:1, :, :], torch.flip(hx[1:, :, :], dims=(1,))], -1)
         return self.norm(output), hx, self.hx_encoder_layer(hx)
 
 
-
 class LSTMEncoderModule(nn.Module):
-    def __init__(self, d_model: int, bias: bool = True, bidirectional: bool=False):
+    def __init__(self, d_model: int, bias: bool = True, bidirectional: bool = False):
         super(LSTMEncoderModule, self).__init__()
         self.norm = nn.LayerNorm(d_model)
+        d_input = d_model
         if bidirectional:
             assert d_model % 2 == 0
-            d_model = d_model / 2
+            d_model = d_model // 2
 
-        self.cell = nn.LSTM(input_size=d_model, hidden_size=d_model, bias=bias, num_layers=1, batch_first=True,
+        self.cell = nn.LSTM(input_size=d_input, hidden_size=d_model, bias=bias, num_layers=1, batch_first=True,
                             bidirectional=bidirectional)
         self.bidirectional = bidirectional
         self.d_model = d_model
@@ -49,17 +52,18 @@ class LSTMEncoderModule(nn.Module):
     def forward(self, x_past: torch.Tensor, hx: Tuple[torch.Tensor] | None = None):
         output, hx = self.cell(x_past, hx)
         if self.bidirectional:
-            output = torch.cat([output[:, :, :self.d_model], torch.flip(output[:, :, :self.d_model], dims=(1,)), -1])
+            output = torch.cat([output[:, :, :self.d_model], torch.flip(output[:, :, :self.d_model], dims=(1,))], -1)
             hx = (
-                torch.cat([hx[0][:self.num_layers, :, :], torch.flip(hx[0][self.num_layers:, :, :], dims=(1,))], -1),
-                torch.cat([hx[1][:self.num_layers, :, :], torch.flip(hx[1][self.num_layers:, :, :], dims=(1,))], -1),
+                torch.cat([hx[0][:1, :, :], torch.flip(hx[0][1:, :, :], dims=(1,))], -1),
+                torch.cat([hx[1][:1, :, :], torch.flip(hx[1][1:, :, :], dims=(1,))], -1),
             )
 
         return self.norm(output), *hx
 
 
 class TransformerEncoderModule(nn.Module):
-    def __init__(self, d_model: int, nhead: int = 8, activation='gelu', dropout:float=0.2, is_casual_model: bool = False, is_first_layer: bool=False):
+    def __init__(self, d_model: int, nhead: int = 8, activation='gelu', dropout: float = 0.2,
+                 is_casual_model: bool = False, is_first_layer: bool = False):
         super(TransformerEncoderModule, self).__init__()
         self.cell = nn.TransformerEncoderLayer(d_model, nhead=nhead, dim_feedforward=4 * d_model, batch_first=True,
                                                dropout=dropout,
@@ -97,7 +101,8 @@ class _Chomp1d(nn.Module):
 
 
 class TCNEncoderModule(nn.Module):
-    def __init__(self, d_model: int, kernel_size: int = TCN_DEFAULT_KERNEL_SIZE, stride: int = 1, dilation: int = 1, dropout: float = 0.2):
+    def __init__(self, d_model: int, kernel_size: int = TCN_DEFAULT_KERNEL_SIZE, stride: int = 1, dilation: int = 1,
+                 dropout: float = 0.2):
         super(TCNEncoderModule, self).__init__()
         padding = (kernel_size - 1) * dilation
         self.conv1 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,
@@ -113,7 +118,7 @@ class TCNEncoderModule(nn.Module):
         self.dropout2 = nn.Dropout(dropout)
 
         self.net = nn.Sequential(self.conv1, self.chomp1, self.relu1, self.dropout1,
-                                 self.conv2, self.chomp2, self.relu2, self.dropout2,)
+                                 self.conv2, self.chomp2, self.relu2, self.dropout2, )
         self.relu = nn.ReLU()
         self.norm = nn.LayerNorm(d_model)
 
@@ -134,7 +139,7 @@ class TCNEncoderModule(nn.Module):
 
 class MLPMixEncoderModule(nn.Module):
     # https://arxiv.org/pdf/2303.06053.pdf
-    def __init__(self, d_model: int, window_size: int, dropout: float = 0.2, forecasting_horizon: int=0):
+    def __init__(self, d_model: int, window_size: int, dropout: float = 0.2, forecasting_horizon: int = 0):
         super(MLPMixEncoderModule, self).__init__()
         self.time_mixer = nn.Sequential(
             nn.Linear(window_size, window_size),

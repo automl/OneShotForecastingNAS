@@ -9,14 +9,24 @@ from autoPyTorch.pipeline.components.setup.network_head.forecasting_network_head
 )
 
 
+class TSMLPBatchNormLayer(nn.Module):
+    def __init__(self, n_dims: int, affine: bool=True):
+        super(TSMLPBatchNormLayer, self).__init__()
+        self.bn = nn.BatchNorm1d(n_dims, affine=affine)
+
+    def forward(self, x):
+        x = self.bn(torch.transpose(x, 1, 2)).transpose(1, 2)
+        return x
+
+
 class MLPFlatModule(nn.Module):
-    def __init__(self, window_size: int, forecasting_horizon: int,  dropout: float = 0.2,
+    def __init__(self, window_size: int, forecasting_horizon: int, dropout: float = 0.2,
                  is_last_layer: bool = False, norm_type='ln'):
         super(MLPFlatModule, self).__init__()
         if norm_type == 'ln':
             norm_layer = nn.LayerNorm(forecasting_horizon)
         elif norm_type == 'bn':
-            norm_layer = nn.BatchNorm1d(forecasting_horizon)
+            norm_layer = TSMLPBatchNormLayer(forecasting_horizon)
         else:
             raise NotImplementedError
         if is_last_layer:
@@ -33,7 +43,7 @@ class MLPFlatModule(nn.Module):
 
     def forward(self, x_past: torch.Tensor, **kwargs):
         # here x_past should be the concatenation of x_past + x_future
-        return torch.cat([x_past[:, :self.window_size], self.net(x_past)], -1)
+        return torch.cat([x_past[:, :, :self.window_size], self.net(x_past)], -1)
 
 
 class NBEATSModule(nn.Module):
@@ -50,7 +60,7 @@ class NBEATSModule(nn.Module):
             if norm_type == 'ln':
                 norm_layer = nn.LayerNorm(width)
             elif norm_type == 'bn':
-                norm_layer = nn.BatchNorm1d(width)
+                norm_layer = TSMLPBatchNormLayer(width)
             else:
                 raise NotImplementedError
 
@@ -87,11 +97,12 @@ class NBEATSModule(nn.Module):
         self.forecasting_horizon = forecasting_horizon
 
     def forward(self, x_past: torch.Tensor, **kwargs):
-        x = self.layers(x_past[:, :self.window_size])
+        x_past_input = x_past.shape
+        x = self.layers(x_past[:, :, :self.window_size]).flatten(0, 1)
 
         forecast = self.forecast_head(x)
         backcast = self.backcast_head(x)
-        block_out = torch.cat([-backcast, forecast], dim=-1)
+        block_out = torch.cat([-backcast, forecast], dim=-1).view(x_past_input)
         # backcast = x_past - backcast
         # forecast = x_future + forecast
         return block_out + x_past
