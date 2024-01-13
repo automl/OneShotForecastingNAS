@@ -684,7 +684,7 @@ class SampledFlatEncoderCell(SampledEncoderCell):
                     op = self.all_ops[op_name](window_size=self.window_size,
                                                forecasting_horizon=self.forecasting_horizon, **op_kwargs)
                     self.edges[node_str] = op
-                    k += 1
+                k += 1
 
         self.edge_keys = sorted(list(self.edges.keys()))
         self.edge2index = {key: i for i, key in enumerate(self.edge_keys)}
