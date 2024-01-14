@@ -8,7 +8,6 @@ import omegaconf
 import torch
 import wandb
 
-from autoPyTorch.datasets.time_series_dataset import get_lags_for_frequency
 from autoPyTorch.pipeline.components.setup.forecasting_target_scaling.utils import TargetScaler
 from datasets import get_LTSF_dataset, get_monash_dataset
 from datasets.get_data_loader import get_forecasting_dataset, get_dataloader, regenerate_splits
@@ -27,8 +26,8 @@ from tsf_oneshot.networks.network_controller import (
 from tsf_oneshot.cells.encoders.components import TCN_DEFAULT_KERNEL_SIZE
 
 from tsf_oneshot.training.trainer import ForecastingTrainer, ForecastingDARTSSecondOrderTrainer
-from tsf_oneshot.training.utils import get_optimizer
 from tsf_oneshot.training.utils import get_optimizer, get_lr_scheduler
+
 
 
 def seed_everything(seed: int):
@@ -83,7 +82,7 @@ def main(cfg: omegaconf.DictConfig):
                                                            forecasting_horizon=cfg.benchmark.external_forecast_horizon,
                                                            make_dataset_uni_variant=cfg.benchmark.get(
                                                                "make_dataset_uni_variant", False),
-                                                           flag='train')
+                                                           flag='train_val')
         else:
             data_info, border2 = get_LTSF_dataset.get_train_dataset(dataset_root_path, dataset_name=dataset_name,
                                                            file_name=cfg.benchmark.file_name,
@@ -95,6 +94,12 @@ def main(cfg: omegaconf.DictConfig):
                                                            flag='train_val')
     else:
         raise NotImplementedError
+
+    if dataset_name.split('_')[0] in get_LTSF_dataset.SMALL_DATASET:
+        # Smaller dataset needs smaller number of dimensions to avoids overfitting
+        d_model_fraction = 4
+    else:
+        d_model_fraction = 1
 
     dataset = get_forecasting_dataset(dataset_name=dataset_name, **data_info)
     dataset.lagged_value = [0] # + get_lags_for_frequency(dataset.freq, num_default_lags=1)
@@ -114,7 +119,7 @@ def main(cfg: omegaconf.DictConfig):
 
     window_size = int(cfg.benchmark.dataloader.window_size)
     start_idx = window_size + max(dataset.lagged_value)
-    splits_new = regenerate_splits(dataset, val_share=val_share, start_idx=start_idx, strategy='holdout')
+    splits_new = regenerate_splits(dataset, val_share=val_share, start_idx=start_idx, strategy='cv')
 
     # indices = np.arange(start_idx, len(dataset))
 
@@ -130,13 +135,6 @@ def main(cfg: omegaconf.DictConfig):
         n_epochs = int(cfg.train.n_epochs)
         search_sample_interval = cfg.benchmark.dataloader.get('search_sample_interval', 1)
     batch_size = cfg.benchmark.dataloader.batch_size
-
-    train_data_loader, val_data_loader = get_dataloader(
-        dataset=dataset, splits=splits_new, batch_size=batch_size,
-        num_batches_per_epoch=num_batches_per_epoch,
-        window_size=window_size,
-        sample_interval=search_sample_interval
-    )
 
     if cfg.model.get('select_with_pt', False):
         # if we would like to select architectures with perturbation: https://openreview.net/pdf?id=PKubaeJkw3
@@ -155,6 +153,10 @@ def main(cfg: omegaconf.DictConfig):
         split_val_pt = [
             np.arange(border1s[1], border2s[1] - dataset.n_prediction_steps),
         ]
+
+        no_intersect = (splits_new[0] + cfg.benchmark.external_forecast_horizon) < split_val_pt[0][0]
+        splits_new = [splits_new[0][no_intersect], splits_new[1][:sum(no_intersect)]]
+
         dataset_val = get_forecasting_dataset(dataset_name=dataset_name, **data_info)
         dataset_val.lagged_value = [0]  # + get_lags_for_frequency(dataset.freq, num_default_lags=1)
 
@@ -173,6 +175,13 @@ def main(cfg: omegaconf.DictConfig):
         proj_intv = 1
         proj_intv_nodes = 1
         val_eval_loader = None
+
+    train_data_loader, val_data_loader = get_dataloader(
+        dataset=dataset, splits=splits_new, batch_size=batch_size,
+        num_batches_per_epoch=num_batches_per_epoch,
+        window_size=window_size,
+        sample_interval=search_sample_interval
+    )
 
     # we need to adjust the values to initialize our networks
     window_size = (window_size - 1) // search_sample_interval + 1
@@ -217,7 +226,7 @@ def main(cfg: omegaconf.DictConfig):
              'window_size': window_size,
              'forecasting_horizon': n_prediction_steps,
              'd_input_future': d_input_future,
-             'd_model': int(cfg.model.d_model),
+             'd_model': int(cfg.model.d_model) // d_model_fraction,
              'd_output': d_output,
              'PRIMITIVES_encoder': list(cfg.model.PRIMITIVES_encoder),
              'PRIMITIVES_decoder': list(cfg.model.PRIMITIVES_decoder),
@@ -274,7 +283,7 @@ def main(cfg: omegaconf.DictConfig):
         net_init_kwargs = {
             'd_input_past': d_input_past,
             'd_input_future': d_input_future,
-            'd_model': int(cfg.model.seq_model.d_model),
+            'd_model': int(cfg.model.seq_model.d_model) // d_model_fraction,
             'd_output': d_output,
             'n_cells_seq': int(cfg.model.seq_model.n_cells),
             'n_nodes_seq': int(cfg.model.seq_model.n_nodes),

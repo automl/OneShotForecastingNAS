@@ -69,7 +69,7 @@ def main(cfg: omegaconf.DictConfig):
                tags=[f'seed_{seed}', model_name],
                )
 
-    out_path = Path(cfg.model_dir) / device / dataset_type / dataset_name / model_name / str(seed)
+    out_path = Path(cfg.model_dir) / device / f'{dataset_type}' / dataset_name / model_name / str(seed)
     if not out_path.exists():
         os.makedirs(out_path, exist_ok=True)
 
@@ -80,7 +80,7 @@ def main(cfg: omegaconf.DictConfig):
                                                                  external_forecast_horizon=cfg.benchmark.get(
                                                                      'external_forecast_horizon', None)
                                                                  )
-    elif dataset_type == 'LTSF':
+    elif dataset_type == 'LTSF' or dataset_type =='LTSF_backup':
         data_info, split_begin, split_end, (border1s, border2s) = get_LTSF_dataset.get_test_dataset(dataset_root_path,
                                                                                                     dataset_name=dataset_name,
                                                                                                     file_name=cfg.benchmark.file_name,
@@ -93,6 +93,12 @@ def main(cfg: omegaconf.DictConfig):
                                                                                                     flag='test')
     else:
         raise NotImplementedError
+
+    if dataset_name.split('_')[0] in get_LTSF_dataset.SMALL_DATASET:
+        # Smaller dataset needs smaller number of dimensions to avoids overfitting
+        d_model_fraction = 4
+    else:
+        d_model_fraction = 1
 
     dataset = get_forecasting_dataset(dataset_name=dataset_name, **data_info)
     dataset.lagged_value = [0] # + get_lags_for_frequency(dataset.freq, num_default_lags=1)
@@ -163,7 +169,7 @@ def main(cfg: omegaconf.DictConfig):
             'forecasting_horizon': dataset.n_prediction_steps,
             'OPS_kwargs': ops_kwargs,
             'd_input_future': d_input_future,
-            'd_model': int(cfg.model.d_model),
+            'd_model': int(cfg.model.d_model) // d_model_fraction,
             'd_output': d_output,
             'n_cells': int(cfg.model.n_cells),
             'n_nodes': int(cfg.model.n_nodes),
@@ -252,7 +258,7 @@ def main(cfg: omegaconf.DictConfig):
         net_init_kwargs = dict(d_input_past=d_input_past,
                                d_input_future=d_input_future,
                                d_output=d_output,
-                               d_model=int(cfg.model.seq_model.d_model),
+                               d_model=int(cfg.model.d_model) // d_model_fraction,
                                n_cells_seq=int(cfg.model.seq_model.n_cells),
                                n_nodes_seq=int(cfg.model.seq_model.n_nodes),
                                n_cell_input_nodes_seq=int(cfg.model.seq_model.n_cell_input_nodes),
@@ -315,7 +321,7 @@ def main(cfg: omegaconf.DictConfig):
         amp_enable=cfg.train.amp_enable
     )
 
-    early_stopping = EarlyStopping(20)
+    early_stopping = EarlyStopping(100)
 
     epoch_start = 0
     #if (out_path / 'SampledNet' / 'Model').exists():
@@ -331,8 +337,12 @@ def main(cfg: omegaconf.DictConfig):
         if do_early_stopping:
             break
 
+    print(f"best val loss: {early_stopping.best_val_loss},"
+          f"best test loss: {early_stopping.best_test_loss}")
+    res_all = {'val': early_stopping.val_ht,
+               'test': early_stopping.test_ht}
     with open(out_path / 'eval_res.json', 'w') as f:
-        json.dump(early_stopping.best_test_loss, f)
+        json.dump(res_all, f)
 
 if __name__ == '__main__':
     main()

@@ -8,6 +8,9 @@ import os
 from sklearn.preprocessing import StandardScaler
 import warnings
 
+SMALL_DATASET = ['ETTh1', 'ETTh2', 'illness', 'exchangerate']
+LARGE_DATASET = ['ETTm1', 'ETTm2', 'traffic', 'weather']
+
 
 DATASETS_INFO = {
     "electricity": ("electricity/electricity.csv", 'M', '1H', [96, 192, 336, 720]),
