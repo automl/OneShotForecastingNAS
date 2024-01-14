@@ -122,21 +122,24 @@ class AbstractForecastingNetworkController(nn.Module):
             for j in range(i):
                 node = f'{i}<-{j}'
                 node_idx = []
-                idx = net_edge2index[node]
-                idx_start = 0
-                for name, p_len in zip(self.all_arch_p_names, self.len_all_arch_p):
-                    if name in backbone_arch_names:
-                        node_idx.append(idx_start + idx)
-                    idx_start += p_len
-                node_ = f'{i + idx_base}<-{j}'
-                edge2idx[node_] = node_idx
+                if node in net_edge2index:
+                    idx = net_edge2index[node]
+                    idx_start = 0
+                    for name, p_len in zip(self.all_arch_p_names, self.len_all_arch_p):
+                        if name in backbone_arch_names:
+                            node_idx.append(idx_start + idx)
+                        idx_start += p_len
+                    node_ = f'{i + idx_base}<-{j}'
+                    edge2idx[node_] = node_idx
         return edge2idx
 
     def get_edge2index(self):
         edge2idx = self._get_edge2index(self.net.n_cell_nodes, self.net.edge2index,
                                         ['arch_p_encoder', 'arch_p_decoder'])
         candidate_flag_nodes = [True] * self.net.n_cell_nodes
-        candidate_flag_nodes[:N_RESERVED_EDGES_PER_NODE + 1] = [False] * (N_RESERVED_EDGES_PER_NODE + 1)
+        n_ignore = max(self.net.n_cell_input_nodes, N_RESERVED_EDGES_PER_NODE) + 1
+
+        candidate_flag_nodes[:n_ignore] = [False] * n_ignore
         return edge2idx, candidate_flag_nodes
 
     def get_len_arch_p(self):
@@ -676,16 +679,18 @@ class ForecastingAbstractMixedNetController(AbstractForecastingNetworkController
         edge2idx = self._get_edge2index(self.net.n_cell_nodes_seq, self.net.edge2index_seq,
                                          ['arch_p_encoder_seq', 'arch_p_decoder_seq'])
         candidate_flag_nodes_seq = [True] * self.net.n_cell_nodes_seq
-        candidate_flag_nodes_seq[:N_RESERVED_EDGES_PER_NODE + 1] = [False] * (N_RESERVED_EDGES_PER_NODE + 1)
+        n_ignore_seq = max(self.net.n_cell_input_nodes_seq, N_RESERVED_EDGES_PER_NODE) + 1
+        candidate_flag_nodes_seq[:n_ignore_seq] = [False] * n_ignore_seq
 
         edge2idx.update(self._get_edge2index(
             self.net.n_cell_nodes_flat, self.net.edge2index_flat,
             ['arch_p_encoder_flat', 'arch_p_decoder_flat'],
             idx_base=len(candidate_flag_nodes_seq))
         )
+        n_ignore_flat = max(self.net.n_cell_nodes_flat, N_RESERVED_EDGES_PER_NODE) + 1
 
         candidate_flag_nodes_flat = [True] * self.net.n_cell_nodes_flat
-        candidate_flag_nodes_flat[:N_RESERVED_EDGES_PER_NODE + 1] = [False] * (N_RESERVED_EDGES_PER_NODE + 1)
+        candidate_flag_nodes_flat[:n_ignore_flat] = [False] * n_ignore_flat
         return edge2idx, candidate_flag_nodes_seq + candidate_flag_nodes_flat
 
     def validate_input_kwargs(self, kwargs):
@@ -711,9 +716,9 @@ class ForecastingAbstractMixedNetController(AbstractForecastingNetworkController
 
         w_dag_head = self.get_w_dag(self.arch_p_heads + self.mask_heads)
 
-        # w_dag_net = self.get_w_dag(self.arch_p_nets + self.mask_net)
+        w_dag_net = self.get_w_dag(self.arch_p_nets + self.mask_net)
         # for different, architectures, they are not competitors. Therefore, we simply apply sigmoid to these values.
-        w_dag_net = torch.nn.functional.sigmoid(self.arch_p_nets + self.mask_net)
+        # w_dag_net = torch.nn.functional.sigmoid(self.arch_p_nets + self.mask_net)
 
         return dict(
             arch_p_encoder_seq=w_dag_encoder_seq,

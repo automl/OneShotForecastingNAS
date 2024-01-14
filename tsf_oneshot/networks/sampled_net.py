@@ -16,6 +16,9 @@ from tsf_oneshot.networks.combined_net_utils import (
 from tsf_oneshot.cells.cells import SampledEncoderCell, SampledDecoderCell, SampledFlatEncoderCell
 from tsf_oneshot.cells.ops import PRIMITIVES_Encoder
 from tsf_oneshot.prediction_heads import PREDICTION_HEADs, FLATPREDICTION_HEADs
+from autoPyTorch.pipeline.components.setup.network_backbone.forecasting_backbone.components_util import (
+    PositionalEncoding
+)
 
 class SampledEncoder(AbstractSearchEncoder):
     def __init__(self,
@@ -102,6 +105,11 @@ class SampledEncoder(AbstractSearchEncoder):
 
 
 class SampledDecoder(SampledEncoder):
+    def __init__(self, use_psec=True, **kwargs):
+        super(SampledDecoder, self).__init__(**kwargs)
+        if use_psec:
+            self.embedding_layer = nn.Sequential(self.embedding_layer, PositionalEncoding(self.embedding_layer.d_model))
+
     def get_cell(self, **kwargs):
         return SampledDecoderCell(**kwargs)
 
@@ -136,6 +144,7 @@ class SampledNet(nn.Module):
                  HEAD: str,
                  HEADs_kwargs: dict[str, dict],
                  DECODER: str = 'seq',
+                 decoder_use_psec:bool=True,
                  backcast_loss_ration: float = 0.0
                  ):
         super(SampledNet, self).__init__()
@@ -202,7 +211,8 @@ class SampledNet(nn.Module):
                               PRIMITIVES=PRIMITIVES_decoder,
                               operations=operations_decoder,
                               has_edges=has_edges_decoder,
-                              OPS_kwargs=OPS_kwargs
+                              OPS_kwargs=OPS_kwargs,
+                              use_psec=decoder_use_psec
                               )
         if DECODER == 'seq':
             self.decoder: SampledDecoder = SampledDecoder(
@@ -433,6 +443,8 @@ class SampledFlatNet(SampledNet):
 
 
 class AbstractMixedSampledNet(SampledNet):
+    decoder_use_psec_seq = True
+
     def __init__(self,
                  d_input_past: int,
                  d_input_future: int,
@@ -488,7 +500,7 @@ class AbstractMixedSampledNet(SampledNet):
                 else:
                     seq_net_kwargs[arg_name] = all_kwargs[f'{arg_name}_seq']
 
-        self.seq_net = SampledNet(**seq_net_kwargs)
+        self.seq_net = SampledNet(decoder_use_psec=self.decoder_use_psec_seq, **seq_net_kwargs)
 
         # get arguments for the flat net
         flat_net_kwargs = {}
@@ -519,7 +531,7 @@ class AbstractMixedSampledNet(SampledNet):
         return kwargs
 
     def transform_nets_weights(self):
-        return torch.nn.functional.sigmoid(self.nets_weights)
+        return torch.nn.functional.softmax(self.nets_weights, -1)
 
     @staticmethod
     def load(base_path: Path, device=torch.device('cpu'), model="SampledNet"):
@@ -549,6 +561,7 @@ class MixedParallelSampledNet(AbstractMixedSampledNet):
 
 
 class MixedConcatSampledNet(AbstractMixedSampledNet):
+    decoder_use_psec_seq=False
     def __init__(self, **kwargs):
         super(MixedConcatSampledNet, self).__init__(**kwargs)
         self.flat_net.forecast_only = False # TODO check if there is a better way to handle this

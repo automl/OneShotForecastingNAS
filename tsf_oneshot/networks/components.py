@@ -18,6 +18,10 @@ from tsf_oneshot.cells.cells import (
 )
 from tsf_oneshot.cells.ops import PRIMITIVES_Encoder, PRIMITIVES_FLAT_ENCODER
 from tsf_oneshot.cells.encoders.components import _Chomp1d
+from autoPyTorch.pipeline.components.setup.network_backbone.forecasting_backbone.components_util import (
+    PositionalEncoding
+)
+
 
 class EmbeddingLayer(nn.Module):
     # https://github.com/cure-lab/LTSF-Linear/blob/main/layers/Embed.py
@@ -32,6 +36,8 @@ class EmbeddingLayer(nn.Module):
                                    )
         self.chomp1 = _Chomp1d(padding)
         """
+        self.c_in = c_in
+        self.d_model = d_model
         self.embedding = nn.Linear(
             c_in, d_model, bias=False
         )
@@ -128,8 +134,14 @@ class AbstractSearchEncoder(nn.Module):
         return model
 
     def forward(self, x: torch.Tensor, **kwargs):
-        embedding = self.embedding_layer(x)
-        states = [embedding] * self.n_cell_input_nodes
+        if isinstance(x, torch.Tensor):
+            embedding = self.embedding_layer(x)
+            states = [embedding] * self.n_cell_input_nodes
+        elif isinstance(x, list):
+            # TODO check the cases when len(states) != self.n_cell_input_nodes !!!
+            states = [self.embedding_layer(x_) for x_ in x]
+        else:
+            raise NotImplementedError(f'Unknown input type: {type(x)}')
         return self.cells_forward(states, **kwargs)
 
     def cells_forward(self, **kwargs):
@@ -184,6 +196,11 @@ class SearchGDASEncoder(AbstractSearchEncoder):
 
 
 class SearchDARTSDecoder(SearchDARTSEncoder):
+    def __init__(self, use_psec=True, **kwargs):
+        super(SearchDARTSDecoder, self).__init__(**kwargs)
+        if use_psec:
+            self.embedding_layer = nn.Sequential(self.embedding_layer, PositionalEncoding(self.embedding_layer.d_model))
+
     @staticmethod
     def get_cell(**kwargs):
         return SearchDARTSDecoderCell(**kwargs)
@@ -210,12 +227,18 @@ class LinearDecoder(nn.Module):
         self.window_size = window_size
         self.forecasting_horizon = forecasting_horizon
         self.linear_decoder = nn.Linear(window_size, forecasting_horizon)
+        self.norm = nn.LayerNorm(forecasting_horizon)
 
     def forward(self, net_encoder_output: torch.Tensor, **kwargs):
-        return self.linear_decoder(net_encoder_output.permute(0, 2, 1)).permute(0, 2, 1)
+        return self.norm(self.linear_decoder(net_encoder_output.permute(0, 2, 1))).permute(0, 2, 1)
 
 
 class SearchGDASDecoder(SearchDARTSDecoder):
+    def __init__(self, use_psec=True, **kwargs):
+        super(SearchDARTSDecoder, self).__init__(**kwargs)
+        if use_psec:
+            self.embedding_layer = nn.Sequential(self.embedding_layer, PositionalEncoding(self.embedding_layer.d_model))
+
     @staticmethod
     def get_cell(**kwargs):
         return SearchGDASDecoderCell(**kwargs)

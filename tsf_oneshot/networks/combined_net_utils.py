@@ -74,13 +74,25 @@ def forward_concat_net(flat_net: nn.Module,
                        out_weights: torch.Tensor | None = None):
     flat_out = flat_net(x_past, x_future, **flat_kwargs, forward_only_with_net=True)
     backcast_flat_out, forecast_flat_out = flat_out
-    if out_weights is None:
+
+    """
+    x_past[:, :, :backcast_flat_out.shape[-1]] = backcast_flat_out
+    
+    if True:
         x_past[:, :, :backcast_flat_out.shape[-1]] = backcast_flat_out
     else:
         n_targets = backcast_flat_out.shape[-1]
         x_past_targets = x_past[:, :, : n_targets]
         new_targets = backcast_flat_out[0] * out_weights[0] + x_past_targets * out_weights[1]
         x_past = torch.cat([new_targets, x_past[:, :, n_targets:]], dim=-1)
+    """
+    # x_past contains two values, the first one is from the raw data, the second one is from the decoder architecture
+    # HERE we have x past as the first item and backcast_flat_out as the second input
+    # TODO check the order of the two elements!!!
+    x_past = [
+        x_past,
+        torch.cat([backcast_flat_out, x_past[:,:, backcast_flat_out.shape[-1]:]], dim=-1)
+    ]
 
     x_future = torch.cat([forecast_flat_out, x_future], dim=-1)
     seq_out = seq_net(x_past, x_future, **seq_kwargs)

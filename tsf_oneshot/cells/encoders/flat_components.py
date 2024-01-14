@@ -21,7 +21,7 @@ class TSMLPBatchNormLayer(nn.Module):
 
 class MLPFlatModule(nn.Module):
     def __init__(self, window_size: int, forecasting_horizon: int, dropout: float = 0.2,
-                 is_last_layer: bool = False, norm_type='ln'):
+                 is_last_layer: bool = False, norm_type='bn'):
         super(MLPFlatModule, self).__init__()
         if norm_type == 'ln':
             norm_layer = nn.LayerNorm(forecasting_horizon)
@@ -52,7 +52,7 @@ class NBEATSModule(nn.Module):
                  dropout: float = 0.2,
                  width=64, num_layers: int = 2, thetas_dim: int = 32,
                  stack_type: str = 't',
-                 norm_type='ln'):
+                 norm_type='bn'):
         super(NBEATSModule, self).__init__()
         fc_layers = []
         feature_in = window_size

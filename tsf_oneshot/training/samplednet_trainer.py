@@ -27,8 +27,13 @@ class EarlyStopping:
         self.best_val_loss = {}
         self.best_test_loss = {}
 
+        self.val_ht = []
+        self.test_ht = []
+
     def __call__(self, val_loss: dict, test_loss:dict, n_epoch: int):
         val_loss_mse = val_loss['MSE loss']
+        self.val_ht.append(val_loss)
+        self.test_ht.append(test_loss)
         if val_loss_mse < self.best_val_loss_mse:
             self.best_val_loss_mse = val_loss_mse
 

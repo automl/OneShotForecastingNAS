@@ -57,14 +57,15 @@ class TransformerDecoderModule(ForecastingDecoderLayer):
         super(TransformerDecoderModule, self).__init__()
         self.cell = nn.TransformerDecoderLayer(d_model, nhead=nhead, dim_feedforward=4 * d_model,dropout=dropout, batch_first=True, activation=activation)
         self.is_first_layer = is_first_layer
-        if self.is_first_layer:
-            self.ps_encoding = PositionalEncoding(d_model=d_model)
+        # we apply posititional encoding to all decoder inputs
+        #if self.is_first_layer:
+        #    self.ps_encoding = PositionalEncoding(d_model=d_model)
 
     def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
                 hx1: torch.Tensor, hx2: torch.Tensor):
         mask = nn.Transformer.generate_square_subsequent_mask(x_future.shape[1], device=x_future.device)
-        if self.is_first_layer:
-            x_future = self.ps_encoding(x_future)
+        #if self.is_first_layer:
+        #    x_future = self.ps_encoding(x_future)
         output = self.cell(x_future, memory=encoder_output_net, tgt_mask=mask)
 
         return output

@@ -42,6 +42,7 @@ class ForecastingAbstractNetwork(nn.Module):
                  HEADs: list[str],
                  HEADs_kwargs: dict[str, dict],
                  DECODERS: list[str] = ['seq'],
+                 decoder_use_psec: bool=True,
                  forecast_only: bool = False
                  ):
         super(ForecastingAbstractNetwork, self).__init__()
@@ -82,6 +83,7 @@ class ForecastingAbstractNetwork(nn.Module):
                               n_nodes=n_nodes,
                               n_cell_input_nodes=n_cell_input_nodes,
                               PRIMITIVES=PRIMITIVES_decoder,
+                              use_psec=decoder_use_psec,
                               OPS_kwargs=OPS_kwargs
                               )
         if 'seq' in DECODERS:
@@ -263,6 +265,8 @@ class ForecastingGDASFlatNetwork(ForecastingFlatAbstractNetwork):
 
 
 class ForecastingAbstractMixedNet(nn.Module):
+    decoder_use_psec_seq = True
+
     def __init__(self,
                  d_input_past: int,
                  d_input_future: int,
@@ -305,10 +309,10 @@ class ForecastingAbstractMixedNet(nn.Module):
             if arg_name != 'self':
                 if arg_name in all_kwargs:
                     seq_net_kwargs[arg_name] = all_kwargs[arg_name]
-                else:
+                elif f'{arg_name}_seq' in all_kwargs:
                     seq_net_kwargs[arg_name] = all_kwargs[f'{arg_name}_seq']
 
-        self.seq_net = self.get_seq_net(**seq_net_kwargs)
+        self.seq_net = self.get_seq_net(decoder_use_psec=self.decoder_use_psec_seq, **seq_net_kwargs)
 
         # get arguments for the flat net
         flat_net_kwargs = {}
@@ -333,6 +337,9 @@ class ForecastingAbstractMixedNet(nn.Module):
 
         self.n_cell_nodes_seq = n_nodes_seq + n_cell_input_nodes_seq
         self.n_cell_nodes_flat = n_nodes_flat + n_cell_input_nodes_flat
+
+        self.n_cell_input_nodes_seq = n_cell_input_nodes_seq
+        self.n_cell_input_nodes_flat = n_cell_input_nodes_flat
 
         self.edge2index_seq = self.seq_net.edge2index
         self.edge2index_flat = self.flat_net.edge2index
@@ -416,6 +423,8 @@ class ForecastingAbstractMixedParallelNet(ForecastingAbstractMixedNet):
 
 
 class ForecastingAbstractMixedConcatNet(ForecastingAbstractMixedNet):
+    decoder_use_psec_seq = False
+
     def validate_input_kwargs(self, kwargs):
         kwargs['forecast_only_flat'] = False
         assert kwargs['d_input_future'] == kwargs['d_input_past']
