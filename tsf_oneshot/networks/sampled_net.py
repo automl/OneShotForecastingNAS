@@ -17,7 +17,6 @@ from tsf_oneshot.cells.cells import SampledEncoderCell, SampledDecoderCell, Samp
 from tsf_oneshot.cells.ops import PRIMITIVES_Encoder
 from tsf_oneshot.prediction_heads import PREDICTION_HEADs, FLATPREDICTION_HEADs
 
-
 class SampledEncoder(AbstractSearchEncoder):
     def __init__(self,
                  d_input: int,
@@ -399,18 +398,18 @@ class SampledFlatNet(SampledNet):
         # we only take the past targets
         x_past = x_past[:, :, :self.d_output]
         # This result in a feature map of size [B*N, L, 1]
-        past_targets = torch.transpose(x_past, -1, -2).flatten(0, 1)
-        future_targets = torch.zeros([past_targets.shape[0], self.forecasting_horizon], device=past_targets.device,
+        past_targets = torch.transpose(x_past, -1, -2)
+        future_targets = torch.zeros([*past_targets.shape[:-1], self.forecasting_horizon], device=past_targets.device,
                                      dtype=past_targets.dtype)
         embedding = torch.cat(
-            [past_targets, future_targets], dim=1
+            [past_targets, future_targets], dim=-1
         )
         states = [embedding]
         for cell in self.cells:
             cell_out = cell(s_previous=states, )
             states = [*states[1:], cell_out]
 
-        cell_out = cell_out.unflatten(0, (batch_size, -1)).transpose(-1, -2)
+        cell_out = cell_out.transpose(-1, -2)
         back_cast, fore_cast = torch.split(cell_out, [self.window_size, self.forecasting_horizon], dim=1)
         if forward_only_with_net:
             # TODO check if back_cast is required !
@@ -466,6 +465,8 @@ class AbstractMixedSampledNet(SampledNet):
                  OPS_kwargs_flat: dict[str, dict],
                  HEADs_kwargs_flat: dict[str, dict],
 
+                 nets_weights: list[float],
+
                  backcast_loss_ration_seq: float = 0.0,
                  backcast_loss_ration_flat: float = 0.0,
 
@@ -511,8 +512,14 @@ class AbstractMixedSampledNet(SampledNet):
         self.forecast_only = forecast_only_seq or forecast_only_flat
         self.backcast_loss_ration = max(backcast_loss_ration_seq, backcast_loss_ration_flat)
 
+        self.nets_weights = nn.Parameter(torch.Tensor(nets_weights), requires_grad=False
+                                         )
+
     def validate_input_kwargs(self, kwargs):
         return kwargs
+
+    def transform_nets_weights(self):
+        return torch.nn.functional.sigmoid(self.nets_weights)
 
     @staticmethod
     def load(base_path: Path, device=torch.device('cpu'), model="SampledNet"):
@@ -537,6 +544,7 @@ class MixedParallelSampledNet(AbstractMixedSampledNet):
             seq_net=self.seq_net,
             x_past=x_past,
             x_future=x_future,
+            out_weights=self.transform_nets_weights()
         )
 
 
@@ -567,4 +575,5 @@ class MixedConcatSampledNet(AbstractMixedSampledNet):
             seq_net=self.seq_net,
             x_past=x_past,
             x_future=x_future,
+            out_weights=self.transform_nets_weights()
         )
