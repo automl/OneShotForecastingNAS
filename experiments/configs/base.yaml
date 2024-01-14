@@ -61,7 +61,7 @@ lr_scheduler:
 
 #lr_scheduler:
 #  type: 'CosineAnnealingWarmRestarts'
-#  T_0: 10
+#  T_0: 20
 #  T_mult: 1
 #  eta_min: 1e-6
 
