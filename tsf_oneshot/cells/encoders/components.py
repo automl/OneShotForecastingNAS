@@ -7,7 +7,7 @@ from torch.nn.utils import weight_norm
 from autoPyTorch.pipeline.components.setup.network_backbone.forecasting_backbone.components_util import \
     PositionalEncoding
 
-TCN_DEFAULT_KERNEL_SIZE = 7
+TCN_DEFAULT_KERNEL_SIZE = 15
 
 
 class GRUEncoderModule(nn.Module):

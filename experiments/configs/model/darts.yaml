@@ -17,10 +17,6 @@ select_with_pt: true
 proj_intv: 1
 proj_intv_nodes: 2
 
-model_kwargs:
-  tcn:
-    kernel_size: 7
-    dilation: 1
 
 
 
