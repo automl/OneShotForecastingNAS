@@ -258,7 +258,7 @@ def main(cfg: omegaconf.DictConfig):
         net_init_kwargs = dict(d_input_past=d_input_past,
                                d_input_future=d_input_future,
                                d_output=d_output,
-                               d_model=int(cfg.model.d_model) // d_model_fraction,
+                               d_model=int(cfg.model.seq_model.d_model) // d_model_fraction,
                                n_cells_seq=int(cfg.model.seq_model.n_cells),
                                n_nodes_seq=int(cfg.model.seq_model.n_nodes),
                                n_cell_input_nodes_seq=int(cfg.model.seq_model.n_cell_input_nodes),
