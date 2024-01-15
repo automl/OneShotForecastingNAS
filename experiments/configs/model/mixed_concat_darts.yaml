@@ -22,7 +22,7 @@ flat_model:
   backcast_loss_ration: 0.0
   PRIMITIVES_encoder: [ 'mlp','nbeats_g','nbeats_s', 'nbeats_t', 'skip_connection' ]
 
-HEADs: [ 'quantile', 'mse', 'mae' ]
+HEADs: ['mse', 'mae' ]
 
 use_second_order_grad: false
 select_with_pt: true
