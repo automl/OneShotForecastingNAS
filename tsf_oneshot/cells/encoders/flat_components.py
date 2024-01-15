@@ -1,6 +1,8 @@
 from typing import Tuple, Any
+import numpy as np
 
 import torch
+from torch.nn import functional as F
 from torch import nn
 from autoPyTorch.pipeline.components.setup.network_head.forecasting_network_head.NBEATS_head import (
     get_trend_heads,
@@ -10,13 +12,71 @@ from autoPyTorch.pipeline.components.setup.network_head.forecasting_network_head
 
 
 class TSMLPBatchNormLayer(nn.Module):
-    def __init__(self, n_dims: int, affine: bool=True):
+    def __init__(self, n_dims: int, affine: bool = True):
         super(TSMLPBatchNormLayer, self).__init__()
         self.bn = nn.BatchNorm1d(n_dims, affine=affine)
 
     def forward(self, x):
         x = self.bn(torch.transpose(x, 1, 2)).transpose(1, 2)
         return x
+
+
+class _IdentityBasis(nn.Module):
+    # https://github.com/Nixtla/neuralforecast/blob/main/neuralforecast/models/nhits.py
+    def __init__(
+            self,
+            backcast_size: int,
+            forecast_size: int,
+            interpolation_mode: str,
+            out_features: int = 1,
+    ):
+        super().__init__()
+        assert (interpolation_mode in ["linear", "nearest"]) or (
+                "cubic" in interpolation_mode
+        )
+        self.forecast_size = forecast_size
+        self.backcast_size = backcast_size
+        self.interpolation_mode = interpolation_mode
+        self.out_features = out_features
+
+    def forward(self, theta: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        backcast = theta[:, :, : self.backcast_size]
+        knots = theta[:, :, self.backcast_size:]
+
+        # Interpolation is performed on default dim=-1 := H
+        # knots = knots.reshape(len(knots), self.out_features, -1)
+        if self.interpolation_mode in ["nearest", "linear"]:
+            # knots = knots[:,None,:]
+            forecast = F.interpolate(
+                knots, size=self.forecast_size, mode=self.interpolation_mode
+            )
+            # forecast = forecast[:,0,:]
+        elif "cubic" in self.interpolation_mode:
+            raise NotImplementedError
+            if self.out_features > 1:
+                raise Exception(
+                    "Cubic interpolation not available with multiple outputs."
+                )
+            batch_size = len(backcast)
+            knots = knots[:, None, :, :]
+            forecast = torch.zeros((len(knots), self.forecast_size)).to(knots.device)
+            n_batches = int(np.ceil(len(knots) / batch_size))
+            for i in range(n_batches):
+                forecast_i = F.interpolate(
+                    knots[i * batch_size: (i + 1) * batch_size],
+                    size=self.forecast_size,
+                    mode="bicubic",
+                )
+                forecast[i * batch_size: (i + 1) * batch_size] += forecast_i[
+                                                                  :, 0, 0, :
+                                                                  ]  # [B,None,H,H] -> [B,H]
+            forecast = forecast[:, None, :]  # [B,H] -> [B,None,H]
+        else:
+            raise NotImplementedError
+
+        # [B,Q,H] -> [B,H,Q]
+        # forecast = forecast.permute(0, 2, 1)
+        return backcast, forecast
 
 
 class MLPFlatModule(nn.Module):
@@ -47,7 +107,8 @@ class MLPFlatModule(nn.Module):
 
 
 class NBEATSModule(nn.Module):
-    def __init__(self, window_size: int,
+    def __init__(self,
+                 window_size: int,
                  forecasting_horizon: int,
                  dropout: float = 0.2,
                  width=64, num_layers: int = 2, thetas_dim: int = 32,
@@ -103,8 +164,61 @@ class NBEATSModule(nn.Module):
         forecast = self.forecast_head(x)
         backcast = self.backcast_head(x)
         block_out = torch.cat([-backcast, forecast], dim=-1).view(x_past_input)
-        # backcast = x_past - backcast
-        # forecast = x_future + forecast
+        return block_out + x_past
+
+
+class NHitsModule(nn.Module):
+    # https://github.com/Nixtla/neuralforecast/blob/main/neuralforecast/models/nhits.py
+    def __init__(self,
+                 window_size: int,
+                 forecasting_horizon: int,
+                 dropout: float = 0.2,
+                 width=64, num_layers: int = 2,
+                 n_pool_kernel_size: int = 2,
+                 n_freq_downsample: int = 4,
+                 norm_type: str = 'bn',
+                 interpolation_mode: str = 'linear',
+                 ):
+        super(NHitsModule, self).__init__()
+        self.window_size = window_size
+        self.forecasting_horizon = forecasting_horizon
+
+        feature_in = int(np.ceil(window_size / n_pool_kernel_size))
+        n_theta = window_size + max(forecasting_horizon // n_freq_downsample, 1)
+        fc_layers = []
+        self.pooling_layer = nn.MaxPool1d(
+            kernel_size=n_pool_kernel_size, stride=n_pool_kernel_size, ceil_mode=True
+        )
+
+        for _ in range(num_layers):
+            if norm_type == 'ln':
+                norm_layer = nn.LayerNorm(width)
+            elif norm_type == 'bn':
+                norm_layer = TSMLPBatchNormLayer(width)
+            else:
+                raise NotImplementedError
+
+            fc_layers.extend(
+                [
+                    nn.Linear(feature_in, width, ),
+                    norm_layer,
+                    nn.ReLU(),
+                    nn.Dropout(dropout),
+                ]
+            )
+            feature_in = width
+        fc_layers.append(nn.Linear(feature_in, n_theta))
+
+        self.layers = nn.Sequential(*fc_layers)
+        self.basic = _IdentityBasis(backcast_size=window_size,
+                                    forecast_size=forecasting_horizon,
+                                    out_features=1,
+                                    interpolation_mode=interpolation_mode)
+
+    def forward(self, x_past: torch.Tensor, **kwargs):
+        theta = self.layers(self.pooling_layer(x_past[:, :, :self.window_size]))
+        backcast, forecast = self.basic(theta)
+        block_out = torch.cat([-backcast, forecast], dim=-1)
         return block_out + x_past
 
 
