@@ -56,14 +56,14 @@ class AbstractSearchEncoderCell(nn.Module):
         for i in range(n_input_nodes, self.max_nodes):
             # The first 2 nodes are input nodes
             for j in range(i):
-                dilation = int(2 ** (i - 1))
+                dilation = int(2 ** (j - 1))
                 if 'tcn' in OPS_kwargs:
                     OPS_kwargs['tcn'].update({'dilation': dilation})
                 else:
                     OPS_kwargs.update({'tcn': {'dilation': dilation}})
 
                 if is_first_cell:
-                    if i == n_input_nodes and j == 0:
+                    if i == n_input_nodes:
                         if 'transformer' in OPS_kwargs:
                             OPS_kwargs['transformer'].update(
                                 {'is_first_layer': True}
@@ -550,14 +550,14 @@ class SampledEncoderCell(nn.Module):
             # The first 2 nodes are input nodes
             for j in range(i):
                 if is_first_cell:
-                    if i == n_input_nodes and j == 0:
+                    if i == n_input_nodes:
                         if 'transformer' in OPS_kwargs:
                             OPS_kwargs['transformer'].update(
                                 {'is_first_layer': True}
                             )
                         else:
                             OPS_kwargs.update({'transformer': {'is_first_layer': True}})
-                dilation = int(2 ** (i - 1))
+                dilation = int(2 ** max((j - 1), 0))
                 if 'tcn' in OPS_kwargs:
                     OPS_kwargs['tcn'].update({'dilation': dilation})
                 else:
@@ -670,7 +670,7 @@ class SampledFlatEncoderCell(SampledEncoderCell):
             # The first 2 nodes are input nodes
             for j in range(i):
                 if is_last_cell:
-                    if i == self.max_nodes - 1 and j == i - 1:
+                    if i == (self.max_nodes - 1):
                         if 'mlp' in OPS_kwargs:
                             OPS_kwargs['mlp'].update(
                                 {'is_last_layer': True}
@@ -682,7 +682,7 @@ class SampledFlatEncoderCell(SampledEncoderCell):
                     op_name = PRIMITIVES[operations[k]]
                     op_kwargs = OPS_kwargs.get(op_name, {})
                     op = self.all_ops[op_name](window_size=self.window_size,
-                                               forecasting_horizon=self.forecasting_horizon, **op_kwargs)
+                                           forecasting_horizon=self.forecasting_horizon, **op_kwargs)
                     self.edges[node_str] = op
                 k += 1
 
@@ -702,3 +702,6 @@ class SampledFlatEncoderCell(SampledEncoderCell):
     def get_edge_out(self, node_str, x, **kwargs):
         edge_out = self.edges[node_str](x_past=x)
         return edge_out
+
+    def process_output(self, states: list[torch.Tensor]):
+        return states[-1]

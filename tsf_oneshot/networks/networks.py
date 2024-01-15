@@ -42,7 +42,7 @@ class ForecastingAbstractNetwork(nn.Module):
                  HEADs: list[str],
                  HEADs_kwargs: dict[str, dict],
                  DECODERS: list[str] = ['seq'],
-                 decoder_use_psec: bool=True,
+                 decoder_use_psec: bool=False,
                  forecast_only: bool = False
                  ):
         super(ForecastingAbstractNetwork, self).__init__()
@@ -265,7 +265,7 @@ class ForecastingGDASFlatNetwork(ForecastingFlatAbstractNetwork):
 
 
 class ForecastingAbstractMixedNet(nn.Module):
-    decoder_use_psec_seq = True
+    decoder_use_psec_seq = False
 
     def __init__(self,
                  d_input_past: int,

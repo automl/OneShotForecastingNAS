@@ -144,7 +144,7 @@ class SampledNet(nn.Module):
                  HEAD: str,
                  HEADs_kwargs: dict[str, dict],
                  DECODER: str = 'seq',
-                 decoder_use_psec:bool=True,
+                 decoder_use_psec:bool=False,
                  backcast_loss_ration: float = 0.0
                  ):
         super(SampledNet, self).__init__()
@@ -443,7 +443,7 @@ class SampledFlatNet(SampledNet):
 
 
 class AbstractMixedSampledNet(SampledNet):
-    decoder_use_psec_seq = True
+    decoder_use_psec_seq = False
 
     def __init__(self,
                  d_input_past: int,
@@ -497,7 +497,7 @@ class AbstractMixedSampledNet(SampledNet):
             if arg_name != 'self':
                 if arg_name in all_kwargs:
                     seq_net_kwargs[arg_name] = all_kwargs[arg_name]
-                else:
+                elif  f'{arg_name}_seq' in all_kwargs:
                     seq_net_kwargs[arg_name] = all_kwargs[f'{arg_name}_seq']
 
         self.seq_net = SampledNet(decoder_use_psec=self.decoder_use_psec_seq, **seq_net_kwargs)
@@ -524,8 +524,7 @@ class AbstractMixedSampledNet(SampledNet):
         self.forecast_only = forecast_only_seq or forecast_only_flat
         self.backcast_loss_ration = max(backcast_loss_ration_seq, backcast_loss_ration_flat)
 
-        self.nets_weights = nn.Parameter(torch.Tensor(nets_weights), requires_grad=False
-                                         )
+        self.nets_weights = nn.Parameter(torch.Tensor(nets_weights), requires_grad=False)
 
     def validate_input_kwargs(self, kwargs):
         return kwargs

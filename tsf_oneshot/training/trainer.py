@@ -333,14 +333,9 @@ class ForecastingTrainer:
                 )
             else:
                 backcast, forecast = prediction
-                target_val_backcast = val_X['past_targets'].float()[:, -self.window_size:, :].to(self.device)
-                loss_backcast = self.model.get_validation_loss(
-                    target_val_backcast, backcast, w_dag_val
-                )
-                loss_forecast = self.model.get_validation_loss(
+                a_loss = self.model.get_validation_loss(
                     target_val, forecast, w_dag_val
                 )
-                a_loss = loss_backcast * self.backcast_loss_ration + loss_forecast
 
         self.scaler.scale(a_loss).backward()
 
@@ -465,7 +460,7 @@ class ForecastingTrainer:
                     # We make decision on this only in the last itartion!
                     selected_eid = num_edges - 1
                 else:
-                    candidate_edges = np.nonzero(self.model.candidate_flag_ops)[0]
+                    candidate_edges = np.nonzero(self.model.candidate_flag_ops[:-1])[0]
                     selected_eid = np.random.choice(candidate_edges)
                 selected_eid_raw = selected_eid
                 for n_edge, mask_name in zip(self.model.len_all_arch_p, self.model.all_mask_names):

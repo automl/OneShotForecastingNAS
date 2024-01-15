@@ -4,6 +4,8 @@ import torch
 from torch import nn
 from torch.nn.utils import weight_norm
 
+from tsf_oneshot.cells.encoders.flat_components import TSMLPBatchNormLayer
+
 from autoPyTorch.pipeline.components.setup.network_backbone.forecasting_backbone.components_util import \
     PositionalEncoding
 
@@ -139,32 +141,44 @@ class TCNEncoderModule(nn.Module):
 
 class MLPMixEncoderModule(nn.Module):
     # https://arxiv.org/pdf/2303.06053.pdf
-    def __init__(self, d_model: int, window_size: int, dropout: float = 0.2, forecasting_horizon: int = 0):
+    # https://github.com/google-research/google-research/blob/master/tsmixer/tsmixer_basic/models/tsmixer.py
+    def __init__(self, d_model: int, window_size: int, dropout: float = 0.2,
+                 forecasting_horizon: int = 0, d_ff:int | None=None):
         super(MLPMixEncoderModule, self).__init__()
         self.time_mixer = nn.Sequential(
             nn.Linear(window_size, window_size),
             nn.ReLU(),
             nn.Dropout(dropout)
         )
-        self.time_norm = nn.LayerNorm(window_size)
+        self.time_norm = nn.BatchNorm1d(d_model)
+        # self.time_norm = nn.LayerNorm(window_size)
+
+        if d_ff is None:
+            d_ff = d_model * 2
 
         self.feature_mixer = nn.Sequential(
-            nn.Linear(d_model, d_model),
+            nn.Linear(d_model, d_ff),
             nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_ff, d_model),
             nn.Dropout(dropout)
         )
-        self.feature_norm = nn.LayerNorm(d_model)
+        self.feature_norm = TSMLPBatchNormLayer(d_model)
         self.hx_encoder_layer = nn.Linear(d_model, d_model)
 
     def forward(self, x_past: torch.Tensor, hx: Any | None = None):
-        input_t = x_past.transpose(1, 2).contiguous()
+        input_t = self.time_norm(x_past.transpose(1, 2).contiguous())
         out_t = self.time_mixer(input_t)
-        out_t = self.time_norm(out_t + input_t)
 
         input_f = out_t.transpose(1, 2).contiguous()
+        input_f += input_f + x_past
+
+        input_f = self.feature_norm(input_f)
         out_f = self.feature_mixer(input_f)
-        out = self.feature_norm(input_f + out_f)
+
+        out = out_f + input_f
         hx = out[:, [-1]].transpose(0, 1)
+
         return out, hx, self.hx_encoder_layer(hx)
 
 

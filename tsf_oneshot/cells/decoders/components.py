@@ -8,7 +8,7 @@ import torch
 from torch import nn
 from torch.nn.utils import weight_norm
 
-from tsf_oneshot.cells.encoders.components import _Chomp1d, TCN_DEFAULT_KERNEL_SIZE
+from tsf_oneshot.cells.encoders.components import _Chomp1d, TCN_DEFAULT_KERNEL_SIZE, TSMLPBatchNormLayer
 
 
 class ForecastingDecoderLayer(nn.Module):
@@ -58,14 +58,14 @@ class TransformerDecoderModule(ForecastingDecoderLayer):
         self.cell = nn.TransformerDecoderLayer(d_model, nhead=nhead, dim_feedforward=4 * d_model,dropout=dropout, batch_first=True, activation=activation)
         self.is_first_layer = is_first_layer
         # we apply posititional encoding to all decoder inputs
-        #if self.is_first_layer:
-        #    self.ps_encoding = PositionalEncoding(d_model=d_model)
+        if self.is_first_layer:
+            self.ps_encoding = PositionalEncoding(d_model=d_model)
 
     def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
                 hx1: torch.Tensor, hx2: torch.Tensor):
         mask = nn.Transformer.generate_square_subsequent_mask(x_future.shape[1], device=x_future.device)
-        #if self.is_first_layer:
-        #    x_future = self.ps_encoding(x_future)
+        if self.is_first_layer:
+            x_future = self.ps_encoding(x_future)
         output = self.cell(x_future, memory=encoder_output_net, tgt_mask=mask)
 
         return output
@@ -116,23 +116,30 @@ class MLPMixDecoderModule(ForecastingDecoderLayer):
                  d_model: int,
                  window_size: int,
                  forecasting_horizon: int,
-                 dropout: float=0.2
-                 ):
+                 dropout: float=0.,
+                 d_ff: int | None = None):
         super(MLPMixDecoderModule, self).__init__()
+        if d_ff is None:
+            d_ff = 2 * d_model
         self.forecasting_horizon = forecasting_horizon
         self.time_mixer = nn.Sequential(
             nn.Linear(window_size + forecasting_horizon, forecasting_horizon),
             nn.ReLU(),
             nn.Dropout(dropout)
         )
-        self.time_norm = nn.LayerNorm(forecasting_horizon)
+        self.time_norm = nn.BatchNorm1d(d_model)
+
+        if d_ff is None:
+            d_ff = d_model * 2
 
         self.feature_mixer = nn.Sequential(
-            nn.Linear(d_model, d_model),
+            nn.Linear(d_model, d_ff),
             nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_ff, d_model),
             nn.Dropout(dropout)
         )
-        self.feature_norm = nn.LayerNorm(d_model)
+        self.feature_norm = TSMLPBatchNormLayer(d_model)
 
     def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
                 hx1: torch.Tensor, hx2: torch.Tensor):
@@ -140,13 +147,18 @@ class MLPMixDecoderModule(ForecastingDecoderLayer):
             [encoder_output_net, x_future], dim=1
         ).transpose(1, 2).contiguous()
 
-        out_t = self.time_mixer(input_t)
+        out_t = self.time_norm(input_t)
 
-        out_t = self.time_norm(out_t + input_t[:, :,-self.forecasting_horizon:])
+        out_t = self.time_mixer(out_t)
+
+        out_t = out_t + input_t[:, :,-self.forecasting_horizon:]
 
         input_f = out_t.transpose(1, 2).contiguous()
+
+        input_f = self.feature_norm(input_f)
         out_f = self.feature_mixer(input_f)
-        return self.feature_norm(input_f + out_f)
+
+        return out_f + input_f
 
 """
 class MLPDecoderModule(ForecastingDecoderLayer):
