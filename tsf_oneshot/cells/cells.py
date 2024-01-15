@@ -56,7 +56,7 @@ class AbstractSearchEncoderCell(nn.Module):
         for i in range(n_input_nodes, self.max_nodes):
             # The first 2 nodes are input nodes
             for j in range(i):
-                dilation = int(2 ** (j - 1))
+                dilation = int(2 ** max((j - 1), 0))
                 if 'tcn' in OPS_kwargs:
                     OPS_kwargs['tcn'].update({'dilation': dilation})
                 else:
