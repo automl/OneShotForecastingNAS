@@ -219,7 +219,8 @@ class SampledNet(nn.Module):
                 **decoder_kwargs
             )
         else:
-            self.decoder = LinearDecoder(window_size, forecasting_horizon)
+            self.decoder = LinearDecoder(window_size, forecasting_horizon,
+                                         d_input_future=d_input_future, d_model=d_model)
 
         self.head = PREDICTION_HEADs[HEAD](d_model=d_model, d_output=d_output, **HEADs_kwargs)
 

@@ -29,27 +29,29 @@ class ForecastingDecoderLayer(nn.Module):
 
 
 class GRUDecoderModule(ForecastingDecoderLayer):
-    def __init__(self, d_model: int, bias: bool = True):
+    def __init__(self, d_model: int, bias: bool = True, dropout: float=0.2):
         super(GRUDecoderModule, self).__init__()
         self.cell = nn.GRU(input_size=d_model, hidden_size=d_model, bias=bias, num_layers=1, batch_first=True)
         self.norm = nn.LayerNorm(d_model)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
                 hx1: torch.Tensor, hx2: torch.Tensor):
         output, _ = self.cell(x_future, hx1)
-        return self.norm(output)
+        return self.dropout(self.norm(output))
 
 
 class LSTMDecoderModule(ForecastingDecoderLayer):
-    def __init__(self, d_model: int, bias: bool = True):
+    def __init__(self, d_model: int, bias: bool = True, dropout: float=0.2):
         super(LSTMDecoderModule, self).__init__()
         self.cell = nn.LSTM(input_size=d_model, hidden_size=d_model, bias=bias, num_layers=1, batch_first=True)
         self.norm = nn.LayerNorm(d_model)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
                 hx1: torch.Tensor, hx2: torch.Tensor):
         output, _ = self.cell(x_future, (hx1, hx2))
-        return self.norm(output)
+        return self.dropout(self.norm(output))
 
 
 class TransformerDecoderModule(ForecastingDecoderLayer):
@@ -116,7 +118,7 @@ class MLPMixDecoderModule(ForecastingDecoderLayer):
                  d_model: int,
                  window_size: int,
                  forecasting_horizon: int,
-                 dropout: float=0.,
+                 dropout: float=0.2,
                  d_ff: int | None = None):
         super(MLPMixDecoderModule, self).__init__()
         if d_ff is None:
@@ -144,7 +146,7 @@ class MLPMixDecoderModule(ForecastingDecoderLayer):
     def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
                 hx1: torch.Tensor, hx2: torch.Tensor):
         input_t = torch.cat(
-            [encoder_output_net, x_future], dim=1
+            [encoder_output_layer, x_future], dim=1
         ).transpose(1, 2).contiguous()
 
         out_t = self.time_norm(input_t)

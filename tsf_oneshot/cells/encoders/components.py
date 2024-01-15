@@ -13,7 +13,7 @@ TCN_DEFAULT_KERNEL_SIZE = 15
 
 
 class GRUEncoderModule(nn.Module):
-    def __init__(self, d_model: int, bias: bool = True, bidirectional: bool = False):
+    def __init__(self, d_model: int, bias: bool = True, bidirectional: bool = False, dropout: float = 0.2):
         super(GRUEncoderModule, self).__init__()
         self.norm = nn.LayerNorm(d_model)
         d_input = d_model
@@ -27,6 +27,7 @@ class GRUEncoderModule(nn.Module):
                            batch_first=True, bidirectional=bidirectional)
         self.bidirectional = bidirectional
         self.d_model = d_model
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x_past: torch.Tensor, hx: Tuple[torch.Tensor] | None = None):
         output, hx = self.cell(x_past, hx)
@@ -34,11 +35,11 @@ class GRUEncoderModule(nn.Module):
             # we ask the output to be
             output = torch.cat([output[:, :, :self.d_model], torch.flip(output[:, :, :self.d_model], dims=(1,))], -1)
             hx = torch.cat([hx[:1, :, :], torch.flip(hx[1:, :, :], dims=(1,))], -1)
-        return self.norm(output), hx, self.hx_encoder_layer(hx)
+        return self.dropout(self.norm(output)), hx, self.hx_encoder_layer(hx)
 
 
 class LSTMEncoderModule(nn.Module):
-    def __init__(self, d_model: int, bias: bool = True, bidirectional: bool = False):
+    def __init__(self, d_model: int, bias: bool = True, bidirectional: bool = False, dropout=0.2):
         super(LSTMEncoderModule, self).__init__()
         self.norm = nn.LayerNorm(d_model)
         d_input = d_model
@@ -50,6 +51,7 @@ class LSTMEncoderModule(nn.Module):
                             bidirectional=bidirectional)
         self.bidirectional = bidirectional
         self.d_model = d_model
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x_past: torch.Tensor, hx: Tuple[torch.Tensor] | None = None):
         output, hx = self.cell(x_past, hx)
@@ -59,8 +61,7 @@ class LSTMEncoderModule(nn.Module):
                 torch.cat([hx[0][:1, :, :], torch.flip(hx[0][1:, :, :], dims=(1,))], -1),
                 torch.cat([hx[1][:1, :, :], torch.flip(hx[1][1:, :, :], dims=(1,))], -1),
             )
-
-        return self.norm(output), *hx
+        return self.dropout(self.norm(output)), *hx
 
 
 class TransformerEncoderModule(nn.Module):
@@ -129,7 +130,6 @@ class TCNEncoderModule(nn.Module):
     def forward(self, x_past: torch.Tensor, hx: Any | None = None):
         # swap sequence and feature dimensions for use with convolutional nets
         x_past = x_past.transpose(1, 2).contiguous()
-
         out = self.net(x_past)
         out = self.relu(out + x_past)
         out = out.transpose(1, 2).contiguous()
@@ -143,7 +143,7 @@ class MLPMixEncoderModule(nn.Module):
     # https://arxiv.org/pdf/2303.06053.pdf
     # https://github.com/google-research/google-research/blob/master/tsmixer/tsmixer_basic/models/tsmixer.py
     def __init__(self, d_model: int, window_size: int, dropout: float = 0.2,
-                 forecasting_horizon: int = 0, d_ff:int | None=None):
+                 forecasting_horizon: int = 0, d_ff: int | None = None):
         super(MLPMixEncoderModule, self).__init__()
         self.time_mixer = nn.Sequential(
             nn.Linear(window_size, window_size),

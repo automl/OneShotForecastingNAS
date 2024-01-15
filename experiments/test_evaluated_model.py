@@ -129,7 +129,7 @@ def main(cfg: omegaconf.DictConfig):
         #num_batches_per_epoch=None,
         window_size=window_size,
         is_test_sets=[False, True, True],
-        batch_size_test=256,
+        batch_size_test=128,
     )
     num_targets = dataset.num_targets
 
@@ -231,7 +231,6 @@ def main(cfg: omegaconf.DictConfig):
         head, _ = get_optimized_archs(saved_data_info, 'arch_p_heads', 'mask_heads')
 
         nets_weights = saved_data_info['arch_p_nets'].tolist()[0]
-
         del saved_data_info
 
         head_idx = head[0]

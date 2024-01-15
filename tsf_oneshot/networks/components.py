@@ -217,7 +217,7 @@ class SearchDARTSDecoder(SearchDARTSEncoder):
 
 
 class LinearDecoder(nn.Module):
-    def __init__(self, window_size: int, forecasting_horizon):
+    def __init__(self, window_size: int, forecasting_horizon, d_input_future:int, d_model:int,):
         """
         A naive Linear decoder that maps the decoder to a simple linear layer
         :param window_size:
@@ -226,10 +226,22 @@ class LinearDecoder(nn.Module):
         super(LinearDecoder, self).__init__()
         self.window_size = window_size
         self.forecasting_horizon = forecasting_horizon
-        self.linear_decoder = nn.Linear(window_size, forecasting_horizon)
-        self.norm = nn.LayerNorm(forecasting_horizon)
+        self.d_input_future = d_input_future
 
-    def forward(self, net_encoder_output: torch.Tensor, **kwargs):
+        self.embedding_layer = nn.Linear(d_input_future, d_model)
+        self.norm = nn.LayerNorm(forecasting_horizon)
+        # self.linear_decoder = nn.Linear(window_size + forecasting_horizon, forecasting_horizon)
+
+        self.linear_decoder = nn.Linear(window_size + forecasting_horizon, forecasting_horizon)
+
+    def forward(self, x: torch.Tensor, net_encoder_output: torch.Tensor, **kwargs):
+        if isinstance(x, torch.Tensor):
+            embedding = self.embedding_layer(x)
+        elif isinstance(x, list):
+            # TODO check the cases when len(states) != self.n_cell_input_nodes !!!
+            embedding = sum([self.embedding_layer(x_) for x_ in x])
+        net_encoder_output = torch.cat([net_encoder_output, embedding], dim=1)
+
         return self.norm(self.linear_decoder(net_encoder_output.permute(0, 2, 1))).permute(0, 2, 1)
 
 
