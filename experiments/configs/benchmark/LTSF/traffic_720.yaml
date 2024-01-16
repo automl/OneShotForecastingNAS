@@ -13,4 +13,4 @@ dataloader:
   window_size: 336
   # window_size_coefficient: 1.25
   search_sample_interval: 8
-  num_batches_per_epoch: 1000
+  num_batches_per_epoch: 500
