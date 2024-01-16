@@ -106,6 +106,7 @@ class SampledForecastingNetTrainer:
                  window_size: int,
                  n_prediction_steps: int,
                  lagged_values: list[int],
+                 sample_interval: int,
                  target_scaler: TargetScaler,
                  grad_clip: float = 0,
                  device: torch.device = torch.device('cuda'),
@@ -126,9 +127,13 @@ class SampledForecastingNetTrainer:
         self.lagged_values = lagged_values
         self.window_size = window_size
         self.n_prediction_steps = n_prediction_steps
+        self.sample_interval = sample_interval
 
         self.cached_lag_mask_encoder = None
         self.cached_lag_mask_decoder = None
+
+        self.target_indices = torch.arange(0, n_prediction_steps, sample_interval)
+        self.data_indices = torch.arange(0, window_size, sample_interval)
 
         self.lr_scheduler_w = lr_scheduler_w
 
@@ -240,13 +245,23 @@ class SampledForecastingNetTrainer:
             target_test = test_y['future_targets'].float()
             n_data = len(target_test)
 
-            with torch.no_grad():
-                prediction_test = self.model(x_past_test, x_future_test)
-                prediction_test = self.model.get_inference_prediction(prediction_test)
-                if not self.forecast_only:
-                    prediction_test = prediction_test[-1]
-                prediction_test = rescale_output(prediction_test, *scale_value_test, device=self.device).cpu()
-                diff = (prediction_test - target_test)
+            x_past_test_ = x_past_test.clone()
+            x_future_test_ = x_future_test.clone()
+
+            pred_test = torch.zeros_like(target_test)
+            for shift in range(self.sample_interval):
+                x_past_test = x_past_test_[:, self.data_indices + shift]
+                x_future_test = x_future_test_[:, self.target_indices + shift]
+
+                with torch.no_grad():
+                    prediction_test = self.model(x_past_test, x_future_test)
+                    prediction_test = self.model.get_inference_prediction(prediction_test)
+                    if not self.forecast_only:
+                        prediction_test = prediction_test[-1]
+                    prediction_test = rescale_output(prediction_test, *scale_value_test, device=self.device).cpu()
+                pred_test[:, self.target_indices + shift] = prediction_test
+
+            diff = (pred_test - target_test)
 
             mse_losses.append(n_data * torch.mean(diff ** 2).double().item())
             mae_losses.append(n_data * torch.mean(torch.abs(diff)).item())
@@ -304,44 +319,56 @@ class SampledForecastingNetTrainer:
         x_past_train, x_future_train, scale_value_train = self.preprocessing(train_X)
         target_train = train_y['future_targets'].float().to(self.device)
 
-        self.w_optimizer.zero_grad()
+        all_shift = np.random.permutation(self.sample_interval)
+        x_past_train_ = x_past_train.clone()
+        x_future_train_ = x_future_train.clone()
+        target_train_ = target_train.clone()
+        for shift in all_shift:
+            x_past_train = x_past_train_[:, self.data_indices + shift]
+            x_future_train = x_future_train_[:, self.target_indices + shift]
+            target_train = target_train_[:, self.target_indices + shift]
 
-        with torch.cuda.amp.autocast(enabled=self.amp_enable):
-            prediction_train = self.model(x_past_train, x_future_train, )
-            prediction = rescale_output(prediction_train, *scale_value_train, device=self.device)
-            if self.forecast_only:
-                w_loss = self.model.get_training_loss(
-                    target_train, prediction,
-                )
+            self.w_optimizer.zero_grad()
+
+            with torch.cuda.amp.autocast(enabled=self.amp_enable):
+                prediction_train = self.model(x_past_train, x_future_train, )
+                prediction = rescale_output(prediction_train, *scale_value_train, device=self.device)
+                if self.forecast_only:
+                    w_loss = self.model.get_training_loss(
+                        target_train, prediction,
+                    )
+                else:
+                    backcast, forecast = prediction
+                    target_train_backcast = train_X['past_targets'].float()[:, -self.window_size:, :].to(self.device)
+                    loss_backcast = self.model.get_training_loss(
+                        target_train_backcast, backcast
+                    )
+                    loss_forecast = self.model.get_training_loss(
+                        target_train, forecast,
+                    )
+                    w_loss = loss_backcast * self.backcast_loss_ration + loss_forecast
+
+
+            self.scaler.scale(w_loss).backward()
+            wandb.log({'weights training loss': w_loss})
+
+            if self.grad_clip > 0:
+                self.scaler.unscale_(self.w_optimizer)
+                gradient_norm = self.model.grad_norm()
+                wandb.log({'gradient_norm_weights': gradient_norm})
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
             else:
-                backcast, forecast = prediction
-                target_train_backcast = train_X['past_targets'].float()[:, -self.window_size:, :].to(self.device)
-                loss_backcast = self.model.get_training_loss(
-                    target_train_backcast, backcast
-                )
-                loss_forecast = self.model.get_training_loss(
-                    target_train, forecast,
-                )
-                w_loss = loss_backcast * self.backcast_loss_ration + loss_forecast
+                self.scaler.unscale_(self.w_optimizer)
+                gradient_norm = self.model.grad_norm()
+                wandb.log({'gradient_norm_weights': gradient_norm})
+            self.scaler.step(self.w_optimizer)
+            self.scaler.update()
 
+            if self.lr_scheduler_w is not None and self.lr_scheduler_type == LR_SCHEDULER_TYPE.batch:
+                self.lr_scheduler_w.step()
 
-        self.scaler.scale(w_loss).backward()
-        wandb.log({'weights training loss': w_loss})
+            break
 
-        if self.grad_clip > 0:
-            self.scaler.unscale_(self.w_optimizer)
-            gradient_norm = self.model.grad_norm()
-            wandb.log({'gradient_norm_weights': gradient_norm})
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
-        else:
-            self.scaler.unscale_(self.w_optimizer)
-            gradient_norm = self.model.grad_norm()
-            wandb.log({'gradient_norm_weights': gradient_norm})
-        self.scaler.step(self.w_optimizer)
-        self.scaler.update()
-
-        if self.lr_scheduler_w is not None and self.lr_scheduler_type == LR_SCHEDULER_TYPE.batch:
-            self.lr_scheduler_w.step()
 
         return w_loss, prediction
 

@@ -209,16 +209,6 @@ def main(cfg: omegaconf.DictConfig):
                                     'window_size': window_size,
                                 }
         heads_kwargs = cfg_model.get('heads_kwargs', {})
-        if 'tcn' in ops_kwargs:
-            ops_kwargs['tcn'].update(
-                {
-                    'kernel_size': int(np.ceil(ops_kwargs['tcn'].get('kernel_size', TCN_DEFAULT_KERNEL_SIZE)) / search_sample_interval)
-                }
-            )
-        else:
-            ops_kwargs['tcn'] = {
-                    'kernel_size': int(np.ceil(TCN_DEFAULT_KERNEL_SIZE / search_sample_interval))
-            }
 
         net_init_kwargs.update(
             {'d_input_past': d_input_past,
@@ -261,16 +251,6 @@ def main(cfg: omegaconf.DictConfig):
         cfg_model = omegaconf.OmegaConf.to_container(cfg.model, resolve=True)
         ops_kwargs_seq = cfg_model['seq_model'].get('model_kwargs', {})
 
-        if 'tcn' in ops_kwargs_seq:
-            ops_kwargs_seq['tcn'].update(
-                {
-                    'kernel_size': int(np.ceil(ops_kwargs_seq['tcn'].get('kernel_size', TCN_DEFAULT_KERNEL_SIZE)) / search_sample_interval)
-                }
-            )
-        else:
-            ops_kwargs_seq['tcn'] = {
-                    'kernel_size': int(np.ceil(TCN_DEFAULT_KERNEL_SIZE / search_sample_interval))
-            }
         ops_kwargs_seq['mlp_mix'] = {
                     'forecasting_horizon': n_prediction_steps,
                     'window_size': window_size,

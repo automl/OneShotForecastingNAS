@@ -687,7 +687,7 @@ class ForecastingAbstractMixedNetController(AbstractForecastingNetworkController
             ['arch_p_encoder_flat', 'arch_p_decoder_flat'],
             idx_base=len(candidate_flag_nodes_seq))
         )
-        n_ignore_flat = max(self.net.n_cell_nodes_flat, N_RESERVED_EDGES_PER_NODE) + 1
+        n_ignore_flat = max(self.net.n_cell_input_nodes_flat, N_RESERVED_EDGES_PER_NODE) + 1
 
         candidate_flag_nodes_flat = [True] * self.net.n_cell_nodes_flat
         candidate_flag_nodes_flat[:n_ignore_flat] = [False] * n_ignore_flat

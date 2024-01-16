@@ -10,7 +10,6 @@ import omegaconf
 import torch
 import wandb
 
-from autoPyTorch.datasets.time_series_dataset import get_lags_for_frequency
 from autoPyTorch.pipeline.components.setup.forecasting_target_scaling.utils import TargetScaler
 from datasets import get_LTSF_dataset, get_monash_dataset
 from datasets.get_data_loader import get_forecasting_dataset, get_dataloader, regenerate_splits
@@ -80,7 +79,7 @@ def main(cfg: omegaconf.DictConfig):
                                                                  external_forecast_horizon=cfg.benchmark.get(
                                                                      'external_forecast_horizon', None)
                                                                  )
-    elif dataset_type == 'LTSF' or dataset_type =='LTSF_backup':
+    elif dataset_type == 'LTSF':
         data_info, split_begin, split_end, (border1s, border2s) = get_LTSF_dataset.get_test_dataset(dataset_root_path,
                                                                                                     dataset_name=dataset_name,
                                                                                                     file_name=cfg.benchmark.file_name,
@@ -139,6 +138,13 @@ def main(cfg: omegaconf.DictConfig):
     d_input_future = n_time_features
     d_output = dataset.num_targets
 
+    # This value is used to initialize the networks
+    search_sample_interval = cfg.benchmark.dataloader.get('search_sample_interval', 1)
+
+    window_size_raw = window_size
+    window_size = (window_size - 1) // search_sample_interval + 1
+    n_prediction_steps = (dataset.n_prediction_steps - 1) // search_sample_interval + 1
+
     # TODO check what data to pass
     saved_data_info = torch.load(out_path / 'Model' / 'model_weights.pth')
     if model_type == 'seq':
@@ -153,7 +159,7 @@ def main(cfg: omegaconf.DictConfig):
 
         ops_kwargs = cfg_model.get('model_kwargs', {})
         ops_kwargs['mlp_mix'] = {
-                                    'forecasting_horizon': dataset.n_prediction_steps,
+                                    'forecasting_horizon': n_prediction_steps,
                                     'window_size': window_size,
                                 }
         heads_kwargs = cfg_model.get('heads_kwargs', {})
@@ -166,7 +172,7 @@ def main(cfg: omegaconf.DictConfig):
         net_init_kwargs = {
             'd_input_past': d_input_past,
             'window_size': window_size,
-            'forecasting_horizon': dataset.n_prediction_steps,
+            'forecasting_horizon': n_prediction_steps,
             'OPS_kwargs': ops_kwargs,
             'd_input_future': d_input_future,
             'd_model': int(cfg.model.d_model) // d_model_fraction,
@@ -202,7 +208,7 @@ def main(cfg: omegaconf.DictConfig):
 
         net_init_kwargs = dict(
             window_size=window_size,
-            forecasting_horizon=dataset.n_prediction_steps,
+            forecasting_horizon=n_prediction_steps,
             d_output=d_output,
             OPS_kwargs=ops_kwargs,
             n_cells=int(cfg.model.n_cells),
@@ -231,6 +237,7 @@ def main(cfg: omegaconf.DictConfig):
         head, _ = get_optimized_archs(saved_data_info, 'arch_p_heads', 'mask_heads')
 
         nets_weights = saved_data_info['arch_p_nets'].tolist()[0]
+
         del saved_data_info
 
         head_idx = head[0]
@@ -244,7 +251,7 @@ def main(cfg: omegaconf.DictConfig):
         ops_kwargs_seq = cfg_model['seq_model'].get('model_kwargs', {})
 
         ops_kwargs_seq['mlp_mix'] = {
-                    'forecasting_horizon': dataset.n_prediction_steps,
+                    'forecasting_horizon': n_prediction_steps,
                     'window_size': window_size,
                 }
         heads_kwargs_seq = cfg_model['flat_model'].get('head_kwargs', {})
@@ -273,7 +280,7 @@ def main(cfg: omegaconf.DictConfig):
                                backcast_loss_ration_seq=float(cfg.model.seq_model.get('backcast_loss_ration', 0.0)),
 
                                window_size=window_size,
-                               forecasting_horizon=dataset.n_prediction_steps,
+                               forecasting_horizon=n_prediction_steps,
                                n_cells_flat=int(cfg.model.flat_model.n_cells),
                                n_nodes_flat=int(cfg.model.flat_model.n_nodes),
                                n_cell_input_nodes_flat=int(cfg.model.flat_model.n_cell_input_nodes),
@@ -311,9 +318,10 @@ def main(cfg: omegaconf.DictConfig):
         train_loader=train_data_loader,
         val_loader=val_data_loader,
         test_loader=test_data_loader,
-        window_size=window_size,
+        window_size=window_size_raw,
         n_prediction_steps=dataset.n_prediction_steps,
         lagged_values=dataset.lagged_value,
+        sample_interval=search_sample_interval,
         target_scaler=target_scaler,
         grad_clip=cfg.train.grad_clip,
         device=torch.device('cuda'),

@@ -9,7 +9,7 @@ from tsf_oneshot.cells.encoders.flat_components import TSMLPBatchNormLayer
 from autoPyTorch.pipeline.components.setup.network_backbone.forecasting_backbone.components_util import \
     PositionalEncoding
 
-TCN_DEFAULT_KERNEL_SIZE = 15
+TCN_DEFAULT_KERNEL_SIZE = 7
 
 
 class GRUEncoderModule(nn.Module):
@@ -76,10 +76,11 @@ class TransformerEncoderModule(nn.Module):
         self.is_first_layer = is_first_layer
         if self.is_first_layer:
             self.ps_encoding = PositionalEncoding(d_model=d_model)
+        self.ps_encoding = PositionalEncoding(d_model=d_model)
 
     def forward(self, x_past: torch.Tensor, hx: Any | None = None):
         if self.is_casual_model:
-            mask = nn.Transformer.generate_square_subsequent_mask(x_past.shape[0], device=x_past.device)
+            mask = nn.Transformer.generate_square_subsequent_mask(x_past.shape[1], device=x_past.device)
         else:
             mask = None
         if self.is_first_layer:
@@ -87,7 +88,6 @@ class TransformerEncoderModule(nn.Module):
         output = self.cell(x_past, src_mask=mask)
         # Hidden States
         hidden_states = output[:, [-1]].transpose(0, 1)
-
         return output, hidden_states, self.hx_encoder_layer(hidden_states)
 
 
