@@ -347,7 +347,9 @@ def main(cfg: omegaconf.DictConfig):
     print(f"best val loss: {early_stopping.best_val_loss},"
           f"best test loss: {early_stopping.best_test_loss}")
     res_all = {'val': early_stopping.val_ht,
-               'test': early_stopping.test_ht}
+               'test': early_stopping.test_ht,
+               'best_val': early_stopping.best_val_loss,
+               'best_test': early_stopping.best_test_loss}
     with open(out_path / 'eval_res.json', 'w') as f:
         json.dump(res_all, f)
 
