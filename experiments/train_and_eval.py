@@ -129,12 +129,12 @@ def main(cfg: omegaconf.DictConfig):
         # for gdas, we need more iterations
         num_batches_per_epoch = int(cfg.benchmark.dataloader.num_batches_per_epoch) * 2
         n_epochs = int(cfg.train.n_epochs) * 2
-        search_sample_interval = 1
     else:
         num_batches_per_epoch = int(cfg.benchmark.dataloader.num_batches_per_epoch)
         n_epochs = int(cfg.train.n_epochs)
-        search_sample_interval = cfg.benchmark.dataloader.get('search_sample_interval', 1)
     batch_size = cfg.benchmark.dataloader.batch_size
+
+    search_sample_interval = cfg.benchmark.dataloader.get('search_sample_interval', 1)
 
     if cfg.model.get('select_with_pt', False):
         # if we would like to select architectures with perturbation: https://openreview.net/pdf?id=PKubaeJkw3
@@ -160,12 +160,13 @@ def main(cfg: omegaconf.DictConfig):
         dataset_val = get_forecasting_dataset(dataset_name=dataset_name, **data_info)
         dataset_val.lagged_value = [0]  # + get_lags_for_frequency(dataset.freq, num_default_lags=1)
 
+        # We directly subsample from the preprocessing steps
         val_eval_loader = get_dataloader(
             dataset=dataset_val, splits=split_val_pt, batch_size=batch_size,
             num_batches_per_epoch=None,
             is_test_sets=[True],
             window_size=window_size,
-            sample_interval=search_sample_interval,
+            sample_interval=1,
             batch_size_test=batch_size,
         )[0]
         # the number of epochs that we need to train before evaluating the actual edge
@@ -180,10 +181,11 @@ def main(cfg: omegaconf.DictConfig):
         dataset=dataset, splits=splits_new, batch_size=batch_size,
         num_batches_per_epoch=num_batches_per_epoch,
         window_size=window_size,
-        sample_interval=search_sample_interval
+        sample_interval=1
     )
 
     # we need to adjust the values to initialize our networks
+    window_size_raw = window_size
     window_size = (window_size - 1) // search_sample_interval + 1
     n_prediction_steps = (dataset.n_prediction_steps - 1) // search_sample_interval + 1
 
@@ -370,9 +372,9 @@ def main(cfg: omegaconf.DictConfig):
         val_eval_loader=val_eval_loader,
         proj_intv=proj_intv,
         proj_intv_nodes=proj_intv_nodes,
-        window_size=window_size,
-        n_prediction_steps=n_prediction_steps,
-        search_sample_interval=search_sample_interval,
+        window_size=window_size_raw,
+        n_prediction_steps=dataset.n_prediction_steps,
+        sample_interval=search_sample_interval,
         lagged_values=dataset.lagged_value,
         target_scaler=target_scaler,
         grad_clip=cfg.train.grad_clip,

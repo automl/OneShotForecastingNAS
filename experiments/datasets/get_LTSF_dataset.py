@@ -56,7 +56,6 @@ def get_ltsf_dataset(root_path,
         border1s = [0,         num_train,            len(df_raw) - num_test ]
         border2s = [num_train, num_train + num_vali, len(df_raw)]
 
-
     border1 = 0
     if flag == 'train_val':
         border2 = border1s[2]

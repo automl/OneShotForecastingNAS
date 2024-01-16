@@ -103,7 +103,7 @@ class ForecastingTrainer:
                  proj_intv_nodes: int,
                  window_size: int,
                  n_prediction_steps: int,
-                 search_sample_interval: int,
+                 sample_interval: int,
                  lagged_values: list[int],
                  target_scaler: TargetScaler,
                  grad_clip: float = 0,
@@ -129,8 +129,10 @@ class ForecastingTrainer:
         self.lagged_values = lagged_values
         self.window_size = window_size
         self.n_prediction_steps = n_prediction_steps
-        self.search_sample_interval = search_sample_interval
-        self.target_indices = torch.arange(0, n_prediction_steps) * search_sample_interval
+        self.sample_interval = sample_interval
+
+        self.target_indices = torch.arange(0, n_prediction_steps, sample_interval)
+        self.data_indices = torch.arange(0, window_size, sample_interval)
 
         self.cached_lag_mask_encoder = None
         self.cached_lag_mask_decoder = None
@@ -213,7 +215,7 @@ class ForecastingTrainer:
         """
         x_future = future_features.to(self.device)
 
-        return x_past, x_future[:, self.target_indices], (loc, scale)
+        return x_past, x_future, (loc, scale)
 
     def train_epoch(self, epoch: int, update_alphas:bool=True):
         self.model.train()
@@ -254,7 +256,17 @@ class ForecastingTrainer:
 
     def update_weights(self, train_X, train_y):
         x_past_train, x_future_train, scale_value_train = self.preprocessing(train_X)
-        target_train = train_y['future_targets'][:, self.target_indices].float().to(self.device)
+        target_train = train_y['future_targets'].float().to(self.device)
+
+        shift = np.random.choice(self.sample_interval)
+        #x_past_train_ = x_past_train.clone()
+        #x_future_train_ = x_future_train.clone()
+        #target_train_ = target_train.clone()
+
+        x_past_train = x_past_train[:, self.data_indices + shift]
+        x_future_train = x_future_train[:, self.target_indices + shift]
+        target_train = target_train[:, self.target_indices + shift]
+
 
         with torch.cuda.amp.autocast(enabled=self.amp_enable):
             prediction_train, w_dag_train = self.model(x_past_train, x_future_train, return_w_head=True)
@@ -320,7 +332,16 @@ class ForecastingTrainer:
 
     def update_alphas(self, val_X, val_y):
         x_past_val, x_future_val, scale_value_val = self.preprocessing(val_X)
-        target_val = val_y['future_targets'][:, self.target_indices].float().to(self.device)
+        target_val = val_y['future_targets'].float().to(self.device)
+
+        shift = np.random.choice(self.sample_interval)
+        x_past_val_ = x_past_val.clone()
+        x_future_val_ = x_future_val.clone()
+        target_val_ = target_val.clone()
+
+        x_past_val = x_past_val_[:, self.data_indices + shift]
+        x_future_val = x_future_val_[:, self.target_indices + shift]
+        target_val = target_val_[:, self.target_indices + shift]
 
         with torch.cuda.amp.autocast(enabled=self.amp_enable):
 
@@ -368,17 +389,29 @@ class ForecastingTrainer:
 
         for (test_X, test_y) in tqdm(test_loader):
             x_past_test, x_future_test, scale_value_test = self.preprocessing(test_X)
-            target_test = test_y['future_targets'][:, self.target_indices].float()
+            target_test = test_y['future_targets'].float()
             n_data = len(target_test)
 
+            x_past_test_ = x_past_test.clone()
+            x_future_test_ = x_future_test.clone()
+
+            pred_test = torch.zeros_like(target_test)
+
             self.model.eval()
-            with torch.no_grad():
-                prediction_test, w_dag_test = self.model(x_past_test, x_future_test, return_w_head=True)
-                if not self.forecast_only:
-                    prediction_test = prediction_test[-1]
-                prediction_test = self.model.get_inference_prediction(prediction_test, w_dag_test)
-                prediction_test = rescale_output(prediction_test, *scale_value_test, device=self.device).cpu()
-                diff = (prediction_test - target_test)
+            for shift in range(self.sample_interval):
+                x_past_test = x_past_test_[:, self.data_indices + shift]
+                x_future_test = x_future_test_[:, self.target_indices + shift]
+
+                with torch.no_grad():
+                    prediction_test, w_dag_test = self.model(x_past_test, x_future_test, return_w_head=True)
+                    if not self.forecast_only:
+                        prediction_test = prediction_test[-1]
+                    prediction_test = self.model.get_inference_prediction(prediction_test, w_dag_test)
+                    prediction_test = rescale_output(prediction_test, *scale_value_test, device=self.device).cpu()
+
+                pred_test[:, self.target_indices + shift] = prediction_test
+
+            diff = (pred_test - target_test)
 
             mse_losses.append(n_data * torch.mean(diff ** 2).double().item())
             mae_losses.append(n_data * torch.mean(torch.abs(diff)).item())
