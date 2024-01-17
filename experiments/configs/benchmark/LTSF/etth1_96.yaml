@@ -3,7 +3,7 @@ name: "ETTh1_96"
 file_name: ETT-small/ETTh1.csv
 series_type: "M"
 freq: "1H"
-external_forecast_horizon: 720
+external_forecast_horizon: 96
 do_normalization: true
 metric: mean_MSE_forecasting
 make_dataset_uni_variant: false
