@@ -111,7 +111,7 @@ class NBEATSModule(nn.Module):
                  window_size: int,
                  forecasting_horizon: int,
                  dropout: float = 0.2,
-                 width=64, num_layers: int = 2, thetas_dim: int = 32,
+                 width=128, num_layers: int = 2, thetas_dim: int = 64,
                  stack_type: str = 't',
                  norm_type='bn'):
         super(NBEATSModule, self).__init__()

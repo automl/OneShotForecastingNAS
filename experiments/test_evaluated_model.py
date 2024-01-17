@@ -37,11 +37,11 @@ def seed_everything(seed: int):
 def get_optimized_archs(saved_data_info: dict[str, torch.Tensor], key: str, mask_key: str):
     mask = saved_data_info.get(mask_key, None)
     if mask is None:
-        archp = saved_data_info[key].cpu().argmax(-1).tolist()
+        archp = saved_data_info[key].cpu().argmax(-1)
         has_edges = [True] * len(archp)
     else:
         mask = mask.cpu()
-        archp = (saved_data_info[key].cpu() + mask).argmax(-1).tolist()
+        archp = (saved_data_info[key].cpu() + mask).argmax(-1)
         has_edges = (~torch.isinf(mask).all(1)).tolist()
     return archp, has_edges
 
@@ -140,7 +140,6 @@ def main(cfg: omegaconf.DictConfig):
 
     # This value is used to initialize the networks
     search_sample_interval = cfg.benchmark.dataloader.get('search_sample_interval', 1)
-
     window_size_raw = window_size
     window_size = (window_size - 1) // search_sample_interval + 1
     n_prediction_steps = (dataset.n_prediction_steps - 1) // search_sample_interval + 1
@@ -179,9 +178,9 @@ def main(cfg: omegaconf.DictConfig):
             'd_output': d_output,
             'n_cells': int(cfg.model.n_cells),
             'n_nodes': int(cfg.model.n_nodes),
-            'operations_encoder': operations_encoder,
+            'operations_encoder': operations_encoder.tolist(),
             'has_edges_encoder': has_edges_encoder,
-            'operations_decoder': operations_decoder,
+            'operations_decoder': operations_decoder.tolist(),
             'has_edges_decoder': has_edges_decoder,
             'n_cell_input_nodes': int(cfg.model.n_cell_input_nodes),
             'PRIMITIVES_encoder': list(cfg.model.PRIMITIVES_encoder),
@@ -213,7 +212,7 @@ def main(cfg: omegaconf.DictConfig):
             OPS_kwargs=ops_kwargs,
             n_cells=int(cfg.model.n_cells),
             n_nodes=int(cfg.model.n_nodes),
-            operations_encoder=operations_encoder,
+            operations_encoder=operations_encoder.tolist(),
             has_edges_encoder=has_edges_encoder,
             n_cell_input_nodes=int(cfg.model.n_cell_input_nodes),
             PRIMITIVES_encoder=list(cfg.model.PRIMITIVES_encoder),
@@ -268,9 +267,9 @@ def main(cfg: omegaconf.DictConfig):
                                n_cells_seq=int(cfg.model.seq_model.n_cells),
                                n_nodes_seq=int(cfg.model.seq_model.n_nodes),
                                n_cell_input_nodes_seq=int(cfg.model.seq_model.n_cell_input_nodes),
-                               operations_encoder_seq=operations_encoder_seq,
+                               operations_encoder_seq=operations_encoder_seq.tolist(),
                                has_edges_encoder_seq=has_edges_encoder_seq,
-                               operations_decoder_seq=operations_decoder_seq,
+                               operations_decoder_seq=operations_decoder_seq.tolist(),
                                has_edges_decoder_seq=has_edges_decoder_seq,
                                PRIMITIVES_encoder_seq=list(cfg.model.seq_model.PRIMITIVES_encoder),
                                PRIMITIVES_decoder_seq=list(cfg.model.seq_model.PRIMITIVES_decoder),
@@ -284,7 +283,7 @@ def main(cfg: omegaconf.DictConfig):
                                n_cells_flat=int(cfg.model.flat_model.n_cells),
                                n_nodes_flat=int(cfg.model.flat_model.n_nodes),
                                n_cell_input_nodes_flat=int(cfg.model.flat_model.n_cell_input_nodes),
-                               operations_encoder_flat=operations_encoder_flat,
+                               operations_encoder_flat=operations_encoder_flat.tolist(),
                                has_edges_encoder_flat=has_edges_encoder_flat,
                                PRIMITIVES_encoder_flat=list(cfg.model.flat_model.PRIMITIVES_encoder),
                                OPS_kwargs_flat=ops_kwargs_flat,

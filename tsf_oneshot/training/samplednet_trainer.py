@@ -323,7 +323,7 @@ class SampledForecastingNetTrainer:
         x_past_train_ = x_past_train.clone()
         x_future_train_ = x_future_train.clone()
         target_train_ = target_train.clone()
-        for shift in all_shift:
+        for shift in all_shift[:1]:
             x_past_train = x_past_train_[:, self.data_indices + shift]
             x_future_train = x_future_train_[:, self.target_indices + shift]
             target_train = target_train_[:, self.target_indices + shift]
@@ -366,9 +366,6 @@ class SampledForecastingNetTrainer:
 
             if self.lr_scheduler_w is not None and self.lr_scheduler_type == LR_SCHEDULER_TYPE.batch:
                 self.lr_scheduler_w.step()
-
-            break
-
 
         return w_loss, prediction
 

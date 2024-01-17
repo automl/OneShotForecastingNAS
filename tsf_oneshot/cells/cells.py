@@ -57,23 +57,24 @@ class AbstractSearchEncoderCell(nn.Module):
             # The first 2 nodes are input nodes
             for j in range(i):
                 dilation = int(2 ** max((j - 1), 0))
-                if 'tcn' in OPS_kwargs:
-                    OPS_kwargs['tcn'].update({'dilation': dilation})
+                OPS_kwargs_ = copy.copy(OPS_kwargs)
+                if 'tcn' in OPS_kwargs_:
+                    OPS_kwargs_['tcn'].update({'dilation': dilation})
                 else:
-                    OPS_kwargs.update({'tcn': {'dilation': dilation}})
+                    OPS_kwargs_.update({'tcn': {'dilation': dilation}})
 
                 if is_first_cell:
                     if i == n_input_nodes:
-                        if 'transformer' in OPS_kwargs:
-                            OPS_kwargs['transformer'].update(
+                        if 'transformer' in OPS_kwargs_:
+                            OPS_kwargs_['transformer'].update(
                                 {'is_first_layer': True}
                             )
                         else:
-                            OPS_kwargs.update({'transformer': {'is_first_layer': True}})
+                            OPS_kwargs_.update({'transformer': {'is_first_layer': True}})
                 node_str = f"{i}<-{j}"
                 op = self.op_types(self.d_model,
                                    PRIMITIVES=PRIMITIVES,
-                                   OPS_kwargs=OPS_kwargs)  # TODO check if PRIMITIVES fits the requirements?
+                                   OPS_kwargs=OPS_kwargs_)  # TODO check if PRIMITIVES fits the requirements?
                 self.edges[node_str] = op
 
         self.edge_keys = sorted(list(self.edges.keys()))
@@ -120,7 +121,9 @@ class AbstractSearchEncoderCell(nn.Module):
         return self.process_output(states)
 
     def aggregate_edges_outputs(self, s_curs: list[torch.Tensor]):
-        return sum(s_curs)
+        if len(s_curs) > 0:
+            return sum(s_curs) / len(s_curs)
+        return 0
 
     def get_edge_out(self, node_str, x, w_dag, alpha_prune_threshold, **kwargs):
         raise NotImplementedError
@@ -549,24 +552,26 @@ class SampledEncoderCell(nn.Module):
         for i in range(n_input_nodes, self.max_nodes):
             # The first 2 nodes are input nodes
             for j in range(i):
+                OPS_kwargs_ = copy.copy(OPS_kwargs)
                 if is_first_cell:
                     if i == n_input_nodes:
-                        if 'transformer' in OPS_kwargs:
-                            OPS_kwargs['transformer'].update(
+                        if 'transformer' in OPS_kwargs_:
+                            OPS_kwargs_['transformer'].update(
                                 {'is_first_layer': True}
                             )
                         else:
-                            OPS_kwargs.update({'transformer': {'is_first_layer': True}})
+                            OPS_kwargs_.update({'transformer': {'is_first_layer': True}})
+
                 dilation = int(2 ** max((j - 1), 0))
-                if 'tcn' in OPS_kwargs:
-                    OPS_kwargs['tcn'].update({'dilation': dilation})
+                if 'tcn' in OPS_kwargs_:
+                    OPS_kwargs_['tcn'].update({'dilation': dilation})
                 else:
-                    OPS_kwargs.update({'tcn': {'dilation': dilation}})
+                    OPS_kwargs_.update({'tcn': {'dilation': dilation}})
 
                 if has_edges[k]:
                     node_str = f"{i}<-{j}"
                     op_name = PRIMITIVES[operations[k]]
-                    op_kwargs = OPS_kwargs.get(op_name, {})
+                    op_kwargs = OPS_kwargs_.get(op_name, {})
                     op = self.all_ops[op_name](self.d_model, **op_kwargs)
                     self.edges[node_str] = op
                 k += 1
@@ -610,7 +615,9 @@ class SampledEncoderCell(nn.Module):
         return self.process_output(states)
 
     def aggregate_edges_outputs(self, s_curs: list[torch.Tensor]):
-        return sum(s_curs)
+        if len(s_curs) > 0:
+            return sum(s_curs) / len(s_curs)
+        return 0
 
     def process_output(self, states: list[torch.Tensor]):
         return states[-1]

@@ -62,6 +62,7 @@ class TransformerDecoderModule(ForecastingDecoderLayer):
         # we apply posititional encoding to all decoder inputs
         if self.is_first_layer:
             self.ps_encoding = PositionalEncoding(d_model=d_model)
+        self.ps_encoding = PositionalEncoding(d_model=d_model)
 
     def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
                 hx1: torch.Tensor, hx2: torch.Tensor):
@@ -97,6 +98,12 @@ class TCNDecoderModule(ForecastingDecoderLayer):
         self.relu = nn.ReLU()
         self.norm = nn.LayerNorm(d_model)
         self.receptive_field = 1 + 2 * (kernel_size - 1) * dilation
+
+        self.init_weights()
+
+    def init_weights(self):
+        self.conv1.weight.data.normal_(0, 0.01)
+        self.conv2.weight.data.normal_(0, 0.01)
 
     def forward(self,  x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
                 hx1: torch.Tensor, hx2: torch.Tensor):
@@ -146,7 +153,7 @@ class MLPMixDecoderModule(ForecastingDecoderLayer):
     def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
                 hx1: torch.Tensor, hx2: torch.Tensor):
         input_t = torch.cat(
-            [encoder_output_layer, x_future], dim=1
+            [encoder_output_net, x_future], dim=1
         ).transpose(1, 2).contiguous()
 
         out_t = self.time_norm(input_t)

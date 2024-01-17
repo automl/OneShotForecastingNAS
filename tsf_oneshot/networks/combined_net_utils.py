@@ -91,14 +91,14 @@ def forward_concat_net(flat_net: nn.Module,
     # TODO check the order of the two elements!!!
     x_past = [
         x_past,
-        torch.cat([backcast_flat_out, x_past[:, :, backcast_flat_out.shape[-1]:]], dim=-1)
+        torch.cat([backcast_flat_out, x_past[:, :, backcast_flat_out.shape[-1]:]], dim=-1),
     ]
     """
     x_future = [
         torch.cat([torch.zeros_like(forecast_flat_out), x_future], dim=-1),
         torch.cat([forecast_flat_out, x_future], dim=-1)
     ]
-    """
+    #"""
     x_future = torch.cat([forecast_flat_out, x_future], dim=-1)
     seq_out = seq_net(x_past, x_future, **seq_kwargs)
     if forecast_only_flat:

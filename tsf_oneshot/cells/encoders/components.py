@@ -127,6 +127,12 @@ class TCNEncoderModule(nn.Module):
 
         self.hx_encoder_layer = nn.Linear(d_model, d_model)
 
+        self.init_weights()
+
+    def init_weights(self):
+        self.conv1.weight.data.normal_(0, 0.01)
+        self.conv2.weight.data.normal_(0, 0.01)
+
     def forward(self, x_past: torch.Tensor, hx: Any | None = None):
         # swap sequence and feature dimensions for use with convolutional nets
         x_past = x_past.transpose(1, 2).contiguous()
