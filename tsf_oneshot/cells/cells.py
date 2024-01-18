@@ -121,9 +121,7 @@ class AbstractSearchEncoderCell(nn.Module):
         return self.process_output(states)
 
     def aggregate_edges_outputs(self, s_curs: list[torch.Tensor]):
-        if len(s_curs) > 0:
-            return sum(s_curs) / len(s_curs)
-        return 0
+        return sum(s_curs)
 
     def get_edge_out(self, node_str, x, w_dag, alpha_prune_threshold, **kwargs):
         raise NotImplementedError
@@ -472,6 +470,7 @@ class SearchDARTSFlatEncoderCell(SearchDARTSEncoderCell):
         self.num_edges = len(self.edges)
 
     def aggregate_edges_outputs(self, s_curs: list[torch.Tensor]):
+        return sum(s_curs)
         if len(s_curs) > 0:
             return sum(s_curs) / len(s_curs)
         return 0
@@ -615,9 +614,7 @@ class SampledEncoderCell(nn.Module):
         return self.process_output(states)
 
     def aggregate_edges_outputs(self, s_curs: list[torch.Tensor]):
-        if len(s_curs) > 0:
-            return sum(s_curs) / len(s_curs)
-        return 0
+        return sum(s_curs)
 
     def process_output(self, states: list[torch.Tensor]):
         return states[-1]
@@ -708,11 +705,13 @@ class SampledFlatEncoderCell(SampledEncoderCell):
         self.edge2index = {key: i for i, key in enumerate(self.edge_keys)}
         self.num_edges = len(self.edges)
 
+
         self.intermediate_outputs = {
             key: None for key in self.edge_keys
         }
 
     def aggregate_edges_outputs(self, s_curs: list[torch.Tensor]):
+        return sum(s_curs)
         if len(s_curs) > 0:
             return sum(s_curs) / len(s_curs)
         return 0
