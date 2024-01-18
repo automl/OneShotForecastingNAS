@@ -1,8 +1,8 @@
 type: LTSF
-name: "weather_720"
+name: weather_720
 file_name: weather/weather.csv
-series_type: "M"
-freq: "10min"
+series_type: M
+freq: 10min
 external_forecast_horizon: 720
 do_normalization: true
 metric: mean_MSE_forecasting
@@ -10,7 +10,7 @@ make_dataset_uni_variant: false
 
 
 dataloader:
-  batch_size: 32
+  batch_size: 128
   window_size: 336
   # window_size_coefficient: 1.25
   search_sample_interval: 8

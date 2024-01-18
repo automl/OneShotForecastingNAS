@@ -1,8 +1,8 @@
 type: LTSF
-name: "traffic_96"
+name: traffic_96
 file_name: traffic/traffic.csv
-series_type: "M"
-freq: "1H"
+series_type: M
+freq: 1H
 external_forecast_horizon: 96
 do_normalization: true
 metric: mean_MSE_forecasting
@@ -10,7 +10,7 @@ make_dataset_uni_variant: false
 
 
 dataloader:
-  batch_size: 32
+  batch_size: 64
   window_size: 336
   # window_size_coefficient: 1.25
   search_sample_interval: 1

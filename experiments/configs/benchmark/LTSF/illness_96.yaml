@@ -1,8 +1,8 @@
 type: LTSF
-name: "illness_96"
+name: illness_96
 file_name: illness/national_illness.csv
-series_type: "M"
-freq: "1W"
+series_type: M
+freq: 1W
 external_forecast_horizon: 24
 do_normalization: true
 metric: mean_MSE_forecasting
@@ -10,7 +10,7 @@ make_dataset_uni_variant: false
 
 
 dataloader:
-  batch_size: 32
+  batch_size: 128
   window_size: 96
   # window_size_coefficient: 1.25
   search_sample_interval: 1

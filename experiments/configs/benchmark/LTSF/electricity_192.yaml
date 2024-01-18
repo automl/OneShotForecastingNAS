@@ -1,15 +1,15 @@
 type: LTSF
-name: "electricity_192"
+name: electricity_192
 file_name: electricity/electricity.csv
-series_type: "M"
-freq: "1H"
+series_type: M
+freq: 1H
 external_forecast_horizon: 192
 do_normalization: true
 metric: mean_MSE_forecasting
 make_dataset_uni_variant: false
 
 dataloader:
-  batch_size: 32
+  batch_size: 64
   window_size: 336
   # window_size_coefficient: 1.25
   search_sample_interval: 2
