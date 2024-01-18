@@ -53,7 +53,7 @@ class EarlyStopping:
 
 
 
-def save_images(batch_idx, var_idx, kwargs):
+def save_images(batch_idx, var_idx, shift=None, interval=8,kwargs=None):
     train_X = kwargs['train_X']
     target_train = kwargs['target_train']
     prediction_train = kwargs['prediction_train']
@@ -61,11 +61,27 @@ def save_images(batch_idx, var_idx, kwargs):
     target_val = kwargs['target_val']
     prediction_val = kwargs['prediction_val']
 
+    if 'test_X' in kwargs:
+        test_X = kwargs['test_X']
+        target_test = kwargs['target_test']
+        prediction_test = kwargs['prediction_test']
+
     past = train_X['past_targets'][batch_idx, :, var_idx].cpu().detach().numpy()
     future = target_train[batch_idx, :, var_idx].cpu().detach().numpy()
 
     prediction = prediction_train[batch_idx, :, var_idx].cpu().detach().numpy()
-    fig, ax = plt.subplots(2, 1)
+
+    if shift is not None:
+        past = past[np.arange(0, len(past), interval) + shift]
+        future = future[np.arange(0, len(future), interval) + shift]
+        prediction = prediction[np.arange(0, len(prediction), interval) + shift]
+
+    if 'test_X' in kwargs:
+
+        fig, ax = plt.subplots(3, 1)
+    else:
+        fig, ax = plt.subplots(2, 1)
+
     ax[0].plot(past, label='Past')
     ax[0].plot(np.arange(len(past), len(past) + len(prediction)),
              future, label='GroundTRUTH')
@@ -75,7 +91,7 @@ def save_images(batch_idx, var_idx, kwargs):
     ax[0].set_title('Train')
     i = 0
     for _ in range(10000):
-        if Path(f'train_{i}_batch_{batch_idx}_var_{var_idx}.png').exists():
+        if Path(f'train_{i}_batch_{batch_idx}_var_{var_idx}_shift_{shift if shift is not None else "None"}.png').exists():
             i += 1
         else:
             break
@@ -85,6 +101,11 @@ def save_images(batch_idx, var_idx, kwargs):
 
     prediction = prediction_val[batch_idx, :, var_idx].cpu().detach().numpy()
 
+    if shift is not None:
+        past = past[np.arange(0, len(past), interval) + shift]
+        future = future[np.arange(0, len(future), interval) + shift]
+        prediction = prediction[np.arange(0, len(prediction), interval) + shift]
+
     ax[1].plot(past, label='Past')
     ax[1].plot(np.arange(len(past), len(past) + len(prediction)),
              future, label='GroundTRUTH')
@@ -92,7 +113,26 @@ def save_images(batch_idx, var_idx, kwargs):
              prediction, label='Prediction')
     ax[1].legend()
     ax[1].set_title('val')
-    fig.savefig(f'train_val{i}_batch_{batch_idx}_var_{var_idx}.png')
+
+    if 'test_X' in kwargs:
+        past = test_X['past_targets'][batch_idx, :, var_idx].cpu().detach().numpy()
+        future = target_test[batch_idx, :, var_idx].cpu().detach().numpy()
+
+        prediction = prediction_test[batch_idx, :, var_idx].cpu().detach().numpy()
+
+        if shift is not None:
+            past = past[np.arange(0, len(past), interval) + shift]
+            future = future[np.arange(0, len(future), interval) + shift]
+            prediction = prediction[np.arange(0, len(prediction), interval) + shift]
+
+        ax[2].plot(past, label='Past')
+        ax[2].plot(np.arange(len(past), len(past) + len(prediction)),
+                   future, label='GroundTRUTH')
+        ax[2].plot(np.arange(len(past), len(past) + len(prediction)),
+                   prediction, label='Prediction')
+        ax[2].legend()
+        ax[2].set_title('test')
+    fig.savefig(f'train_{i}_batch_{batch_idx}_var_{var_idx}_shift_{shift if shift is not None else "None"}.png')
 
 
 class SampledForecastingNetTrainer:
@@ -287,33 +327,73 @@ class SampledForecastingNetTrainer:
             target_test = test_y['future_targets'].float()
             n_data = len(target_test)
 
-            with torch.no_grad():
-                prediction_test = self.model(x_past_test, x_future_test)
-                prediction_test = self.model.get_inference_prediction(prediction_test)
-                prediction_test = rescale_output(prediction_test, *scale_value_test, device=self.device).cpu()
-                diff_test = (prediction_test - target_test)
+            pred_test = torch.zeros_like(target_test)
+            for shift in range(self.sample_interval):
+                x_past_test_ = x_past_test[:, self.data_indices + shift]
+                x_future_test_ = x_future_test[:, self.target_indices + shift]
+
+                with torch.no_grad():
+                    prediction_test = self.model(x_past_test_, x_future_test_)
+                    prediction_test = self.model.get_inference_prediction(prediction_test)
+                    prediction_test = rescale_output(prediction_test, *scale_value_test, device=self.device).cpu()
+                    pred_test[:, self.target_indices + shift] = prediction_test
+
+            diff_test = (pred_test - target_test)
 
             train_X, train_y = next(iter(self.train_loader))
             x_past_train, x_future_train, scale_value_train = self.preprocessing(train_X)
             target_train = train_y['future_targets'].float()
 
-            with torch.no_grad():
-                prediction_train = self.model(x_past_train, x_future_train)
-                prediction_train = self.model.get_inference_prediction(prediction_train)
-                prediction_train = rescale_output(prediction_train, *scale_value_train, device=self.device).cpu()
-                diff_train = (target_train - prediction_train)
+            pred_train = torch.zeros_like(target_train)
+            for shift in range(self.sample_interval):
+                x_past_train_ = x_past_train[:, self.data_indices + shift]
+                x_future_train_ = x_future_train[:, self.target_indices + shift]
+
+                with torch.no_grad():
+                    prediction_train = self.model(x_past_train_, x_future_train_)
+                    prediction_train = self.model.get_inference_prediction(prediction_train)
+                    prediction_train = rescale_output(prediction_train, *scale_value_train, device=self.device).cpu()
+                    pred_train[:, self.target_indices + shift] = prediction_train
+            diff_train = (target_train - pred_train)
+
+            val_X, val_y = next(iter(self.val_loader))
+            x_past_val, x_future_val, scale_value_val = self.preprocessing(val_X)
+            target_val = val_y['future_targets'].float()
+            pred_val = torch.zeros_like(target_val)
+
+            for shift in range(self.sample_interval):
+                x_past_val_ = x_past_val[:, self.data_indices + shift]
+                x_future_val_ = x_future_val[:, self.target_indices + shift]
+                with torch.no_grad():
+                    prediction_val = self.model(x_past_val_, x_future_val_)
+                    prediction_val = self.model.get_inference_prediction(prediction_val)
+                    prediction_val = rescale_output(prediction_val, *scale_value_val, device=self.device).cpu()
+                    pred_val[:, self.target_indices + shift] = prediction_val
+
+            diff_val = (target_val - pred_val)
 
             from functools import partial
 
             kwargs = {
                 'train_X': train_X,
                 'target_train': train_y['future_targets'].float(),
-                'prediction_train': prediction_train,
-                'val_X': test_X,
-                'target_val': test_y['future_targets'].float(),
-                'prediction_val': prediction_test,
+                'prediction_train': pred_train,
+                'val_X': val_X,
+                'target_val': val_y['future_targets'].float(),
+                'prediction_val': pred_val,
+                'test_X': test_X,
+                'target_test': test_y['future_targets'].float(),
+                'prediction_test': pred_test,
+
             }
-            func = partial(save_images, kwargs=kwargs)
+            func = partial(save_images, interval=self.sample_interval, kwargs=kwargs)
+            for i in range(8):
+                func(2,0,i)
+            func(2,0,None)
+
+
+            import pdb
+            pdb.set_trace()
 
     def update_weights(self, train_X, train_y):
         x_past_train, x_future_train, scale_value_train = self.preprocessing(train_X)
