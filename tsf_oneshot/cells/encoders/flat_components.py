@@ -10,6 +10,10 @@ from autoPyTorch.pipeline.components.setup.network_head.forecasting_network_head
     get_seasonality_heads
 )
 
+NBEATS_DEFAULT_THETA_DIMS = {'g': 64,
+                             's': 4,
+                             't': 4}
+
 
 class TSMLPBatchNormLayer(nn.Module):
     def __init__(self, n_dims: int, affine: bool = True):
@@ -111,31 +115,28 @@ class NBEATSModule(nn.Module):
                  window_size: int,
                  forecasting_horizon: int,
                  dropout: float = 0.2,
-                 width=128, num_layers: int = 2, thetas_dim: int = 64,
+                 width=128, num_fc_layers: int = 2, thetas_dim: int = 64,
                  stack_type: str = 't',
                  is_last_layer: bool = False,
+                 has_fc_layers: bool = True,
                  norm_type='bn'):
         super(NBEATSModule, self).__init__()
-        fc_layers = []
         feature_in = window_size
-        for _ in range(num_layers):
-            if norm_type == 'ln':
-                norm_layer = nn.LayerNorm(width)
-            elif norm_type == 'bn':
-                norm_layer = TSMLPBatchNormLayer(width)
-            else:
-                raise NotImplementedError
+        self.has_fc_layers = has_fc_layers
 
-            fc_layers.extend(
-                [
-                    nn.Linear(feature_in, width, ),
-                    norm_layer,
-                    nn.ReLU(),
-                    nn.Dropout(dropout),
-                ]
-            )
-            feature_in = width
-        self.layers = nn.Sequential(*fc_layers)
+        self.window_size = window_size
+        self.num_fc_layers = num_fc_layers
+        self.forecasting_horizon = forecasting_horizon
+        self.dropout = dropout
+        self.width = width
+        self.thetas_dim = thetas_dim
+        self.norm_type = norm_type
+
+        if has_fc_layers:
+            self.fc_layers = self.generate_fc_layers(feature_in=feature_in, num_fc_layers=num_fc_layers,
+                                                     width=width,
+                                                     norm_type=norm_type,
+                                                     dropout=dropout)
         if stack_type == 't':
             backcast_head, forecast_head = get_trend_heads(block_width=width,
                                                            backcast_length=window_size,
@@ -159,7 +160,7 @@ class NBEATSModule(nn.Module):
         self.forecasting_horizon = forecasting_horizon
 
         self.is_last_layer = is_last_layer
-        self.dropout = nn.Dropout(dropout)
+        self.dropout_layer = nn.Dropout(dropout)
         if not is_last_layer:
             if norm_type == 'ln':
                 self.norm_layer = nn.LayerNorm(window_size + forecasting_horizon)
@@ -168,12 +169,39 @@ class NBEATSModule(nn.Module):
             else:
                 raise NotImplementedError
 
-    def forward(self, x_past: torch.Tensor, **kwargs):
-        x_past_input = x_past.shape
-        x = self.layers(x_past[:, :, :self.window_size]).flatten(0, 1)
+    @staticmethod
+    def generate_fc_layers(num_fc_layers: int, feature_in: int, width: int, norm_type: str = 'bn', dropout: float = 0.2,
+                           **kwargs):
+        fc_layers = []
+        for _ in range(num_fc_layers):
+            if norm_type == 'ln':
+                norm_layer = nn.LayerNorm(width)
+            elif norm_type == 'bn':
+                norm_layer = TSMLPBatchNormLayer(width)
+            else:
+                raise NotImplementedError
 
-        forecast = self.forecast_head(x)
-        backcast = self.backcast_head(x)
+            fc_layers.extend(
+                [
+                    nn.Linear(feature_in, width, ),
+                    norm_layer,
+                    nn.ReLU(),
+                    nn.Dropout(dropout),
+                ]
+            )
+            feature_in = width
+        fc_layers = nn.Sequential(*fc_layers)
+        return fc_layers
+
+    def forward(self, x_past: torch.Tensor, x_fc_output: torch.Tensor | None = None, **kwargs):
+        x_past_input = x_past.shape
+        if x_fc_output is None:
+            x_fc_output = self.fc_layers(x_past[:, :, :self.window_size]).flatten(0, 1)
+        else:
+            x_fc_output = x_fc_output.flatten(0, 1)
+
+        forecast = self.forecast_head(x_fc_output)
+        backcast = self.backcast_head(x_fc_output)
         block_out = torch.cat([-backcast, forecast], dim=-1).view(x_past_input)
         return block_out + x_past
 
@@ -235,7 +263,7 @@ class NHitsModule(nn.Module):
 
 
 class IdentityFlatEncoderModule(nn.Module):
-    def __init__(self, window_size: int, forecasting_horizon):
+    def __init__(self, window_size: int, forecasting_horizon, **kwargs):
         super().__init__()
 
     def forward(self, x_past: torch.Tensor, **kwargs):

@@ -9,7 +9,7 @@ from tsf_oneshot.cells.encoders.components import (
     MLPMixEncoderModule
 )
 from tsf_oneshot.cells.encoders.flat_components import (
-    IdentityFlatEncoderModule, MLPFlatModule, NBEATSModule, NHitsModule
+    IdentityFlatEncoderModule, MLPFlatModule, NBEATSModule, NHitsModule, NBEATS_DEFAULT_THETA_DIMS
 )
 
 PRIMITIVES_Encoder = {
@@ -23,9 +23,9 @@ PRIMITIVES_Encoder = {
 
 PRIMITIVES_FLAT_ENCODER = {
     'mlp': MLPFlatModule,
-    'nbeats_g': partial(NBEATSModule, stack_type='g'),
-    'nbeats_t': partial(NBEATSModule, stack_type='t', thetas_dim=4),
-    'nbeats_s': partial(NBEATSModule, stack_type='s', thetas_dim=4),
+    'nbeats_g': partial(NBEATSModule, stack_type='g', thetas_dim=NBEATS_DEFAULT_THETA_DIMS['g']),
+    'nbeats_t': partial(NBEATSModule, stack_type='t', thetas_dim=NBEATS_DEFAULT_THETA_DIMS['t']),
+    'nbeats_s': partial(NBEATSModule, stack_type='s', thetas_dim=NBEATS_DEFAULT_THETA_DIMS['s']),
     'nhits_l': partial(NHitsModule, interpolation_mode='linear'),
     'nhits_n': partial(NHitsModule, interpolation_mode='nearest'),
     'nhits_c': partial(NHitsModule, interpolation_mode='cubic'),
