@@ -450,19 +450,19 @@ class SearchDARTSFlatEncoderCell(SearchDARTSEncoderCell):
         for i in range(n_input_nodes, self.max_nodes):
             # The first 2 nodes are input nodes
             for j in range(i):
+                OPS_kwargs_ = copy.copy(OPS_kwargs)
                 if is_last_cell:
-                    if i == self.max_nodes - 1 and j == i - 1:
-                        if 'mlp' in OPS_kwargs:
-                            OPS_kwargs['mlp'].update(
-                                {'is_last_layer': True}
-                            )
-                        else:
-                            OPS_kwargs.update({'mlp': {'is_last_layer': True}})
+                    if i == self.max_nodes - 1:
+                        for name in PRIMITIVES:
+                            if name in OPS_kwargs_:
+                                OPS_kwargs_[name].update({'is_last_layer': True})
+                            else:
+                                OPS_kwargs_.update({name: {'is_last_layer': True}})
                 node_str = f"{i}<-{j}"
                 op = self.op_types(window_size=window_size,
                                    forecasting_horizon=forecasting_horizon,
                                    PRIMITIVES=PRIMITIVES,
-                                   OPS_kwargs=OPS_kwargs)  # TODO check if PRIMITIVES fits the requirements?
+                                   OPS_kwargs=OPS_kwargs_)  # TODO check if PRIMITIVES fits the requirements?
                 self.edges[node_str] = op
 
         self.edge_keys = sorted(list(self.edges.keys()))
@@ -673,28 +673,29 @@ class SampledFlatEncoderCell(SampledEncoderCell):
         for i in range(n_input_nodes, self.max_nodes):
             # The first 2 nodes are input nodes
             for j in range(i):
+                OPS_kwargs_ = copy.copy(OPS_kwargs)
                 if is_last_cell:
                     if i == (self.max_nodes - 1):
-                        if 'mlp' in OPS_kwargs:
-                            OPS_kwargs['mlp'].update(
-                                {'is_last_layer': True}
-                            )
-                        else:
-                            OPS_kwargs.update({'transformer': {'is_last_layer': True}})
-                        for n_hits in n_hits_families:
-                            n_hits_kwargs={
-                                'n_pool_kernel_size':2 if j <= 2 else 1,
-                                'n_freq_downsample':2 ** max(2-j, 0),
+                        if i == self.max_nodes - 1:
+                            for name in PRIMITIVES:
+                                if name in OPS_kwargs_:
+                                    OPS_kwargs_[name].update({'is_last_layer': True})
+                                else:
+                                    OPS_kwargs_.update({name: {'is_last_layer': True}})
+                for n_hits in n_hits_families:
+                    n_hits_kwargs={
+                        'n_pool_kernel_size':2 if j <= 2 else 1,
+                        'n_freq_downsample':2 ** max(2-j, 0),
 
-                            }
-                            if n_hits in OPS_kwargs:
-                                OPS_kwargs[n_hits].update(n_hits_kwargs)
-                            else:
-                                OPS_kwargs[n_hits] = n_hits_kwargs
+                    }
+                    if n_hits in OPS_kwargs_:
+                        OPS_kwargs_[n_hits].update(n_hits_kwargs)
+                    else:
+                        OPS_kwargs_[n_hits] = n_hits_kwargs
                 if has_edges[k]:
                     node_str = f"{i}<-{j}"
                     op_name = PRIMITIVES[operations[k]]
-                    op_kwargs = OPS_kwargs.get(op_name, {})
+                    op_kwargs = OPS_kwargs_.get(op_name, {})
                     op = self.all_ops[op_name](window_size=self.window_size,
                                                forecasting_horizon=self.forecasting_horizon, **op_kwargs)
                     self.edges[node_str] = op
