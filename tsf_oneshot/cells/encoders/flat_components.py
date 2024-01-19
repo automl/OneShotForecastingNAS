@@ -113,6 +113,7 @@ class NBEATSModule(nn.Module):
                  dropout: float = 0.2,
                  width=128, num_layers: int = 2, thetas_dim: int = 64,
                  stack_type: str = 't',
+                 is_last_layer: bool = False,
                  norm_type='bn'):
         super(NBEATSModule, self).__init__()
         fc_layers = []
@@ -157,6 +158,16 @@ class NBEATSModule(nn.Module):
         self.window_size = window_size
         self.forecasting_horizon = forecasting_horizon
 
+        self.is_last_layer = is_last_layer
+        self.dropout = nn.Dropout(dropout)
+        if not is_last_layer:
+            if norm_type == 'ln':
+                self.norm_layer = nn.LayerNorm(window_size + forecasting_horizon)
+            elif norm_type == 'bn':
+                self.norm_layer = TSMLPBatchNormLayer(window_size + forecasting_horizon)
+            else:
+                raise NotImplementedError
+
     def forward(self, x_past: torch.Tensor, **kwargs):
         x_past_input = x_past.shape
         x = self.layers(x_past[:, :, :self.window_size]).flatten(0, 1)
@@ -178,6 +189,7 @@ class NHitsModule(nn.Module):
                  n_freq_downsample: int = 4,
                  norm_type: str = 'bn',
                  interpolation_mode: str = 'linear',
+                 is_last_layer: bool = False,
                  ):
         super(NHitsModule, self).__init__()
         self.window_size = window_size
