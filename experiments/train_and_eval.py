@@ -119,7 +119,7 @@ def main(cfg: omegaconf.DictConfig):
 
     window_size = int(cfg.benchmark.dataloader.window_size)
     start_idx = window_size + max(dataset.lagged_value)
-    splits_new = regenerate_splits(dataset, val_share=val_share, start_idx=start_idx, strategy='cv')
+    splits_new = regenerate_splits(dataset, val_share=val_share, start_idx=start_idx, strategy='holdout')
 
     # indices = np.arange(start_idx, len(dataset))
 
