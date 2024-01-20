@@ -90,8 +90,8 @@ def forward_concat_net(flat_net: nn.Module,
     # HERE we have x past as the first item and backcast_flat_out as the second input
     # TODO check the order of the two elements!!!
     x_past = [
-        x_past,
         torch.cat([backcast_flat_out, x_past[:, :, backcast_flat_out.shape[-1]:]], dim=-1),
+        x_past,
     ]
     """
     x_future = [
