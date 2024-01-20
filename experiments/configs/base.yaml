@@ -59,6 +59,9 @@ lr_scheduler:
   max_lr: ${w_optimizer.lr}
   epochs: ${train.n_epochs}
 
+start_optimize_alpha: 0
+
+
 #lr_scheduler:
 #  type: 'CosineAnnealingWarmRestarts'
 #  T_0: 20
