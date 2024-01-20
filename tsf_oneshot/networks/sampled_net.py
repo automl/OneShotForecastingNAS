@@ -532,6 +532,7 @@ class AbstractMixedSampledNet(SampledNet):
 
     def transform_nets_weights(self):
         return torch.nn.functional.softmax(self.nets_weights, -1)
+        #return torch.nn.functional.sigmoid(self.nets_weights)
 
     @staticmethod
     def load(base_path: Path, device=torch.device('cpu'), model="SampledNet"):
