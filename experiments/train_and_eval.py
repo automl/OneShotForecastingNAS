@@ -379,7 +379,7 @@ def main(cfg: omegaconf.DictConfig):
         target_scaler=target_scaler,
         grad_clip=cfg.train.grad_clip,
         device=torch.device('cuda'),
-        amp_enable=cfg.train.amp_enable
+        amp_enable=cfg.train.amp_enable,
     )
     if grad_order == 2:
         trainer = ForecastingDARTSSecondOrderTrainer(
@@ -396,8 +396,15 @@ def main(cfg: omegaconf.DictConfig):
         epoch_start = trainer.load(out_path, model=model, w_optimizer=w_optimizer,
                                    a_optimizer=a_optimizer, lr_scheduler_w=lr_scheduler)
 
+    start_optimize_alpha = int(cfg.get('start_optimize_alpha', 0))
+
     for epoch in range(epoch_start, n_epochs):
-        w_loss = trainer.train_epoch(epoch)
+        if epoch >= start_optimize_alpha:
+            update_alphas = True
+        else:
+            update_alphas = False
+
+        w_loss = trainer.train_epoch(epoch,update_alphas=update_alphas)
         if epoch in [99]:
             trainer.save(out_path / f'epoch_{epoch}', epoch=epoch)
         if not torch.isnan(w_loss):
