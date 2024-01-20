@@ -45,7 +45,7 @@ class SampledEncoder(AbstractSearchEncoder):
         self.n_cell_input_nodes = n_cell_input_nodes
 
         # self.embedding_layer = nn.Linear(d_input, d_model, bias=True)
-        self.embedding_layer = EmbeddingLayer(d_input, d_model)
+        self.embedding_layers = nn.ModuleList([EmbeddingLayer(d_input, d_model) for _ in range(n_cell_input_nodes)])
 
         cells = []
         num_edges = None
