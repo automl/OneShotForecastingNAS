@@ -479,6 +479,12 @@ class SearchDARTSFlatEncoderCell(SearchDARTSEncoderCell):
                                         alpha_prune_threshold=alpha_prune_threshold)
         return edge_out
 
+    def process_output(self, state: list[torch.Tensor]):
+        #backcast = state[-1][:, :, :self.window_size]
+        #forecast = sum(s[:, :, self.window_size:] for s in state[self.n_input_nodes:])
+        #return torch.cat([backcast, forecast], -1)
+        return state[-1]
+
 
 class SearchGDASFlatEncoderCell(SearchDARTSFlatEncoderCell, SearchGDASEncoderCell):
     op_types = MixedFlatEncoderOps
@@ -719,4 +725,7 @@ class SampledFlatEncoderCell(SampledEncoderCell):
         return edge_out
 
     def process_output(self, states: list[torch.Tensor]):
+        #backcast = states[-1][:, :, :self.window_size]
+        #forecast = sum(state[:, :, self.window_size:] for state in states[self.n_input_nodes:])
+        #return torch.cat([backcast, forecast], -1)
         return states[-1]

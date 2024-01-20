@@ -94,13 +94,13 @@ class MixedFlatEncoderOps(MixedEncoderOps):
                 nbeats_type = primitive.split('_')[-1]
                 if 'thetas_dim' not in op_kwargs:
                     op_kwargs['thetas_dim'] = NBEATS_DEFAULT_THETA_DIMS[nbeats_type]
-                op = self.available_ops[primitive](has_fc_layers=True,
+                op = self.available_ops[primitive](has_fc_layers=False,
                                                    **op_kwargs)
                 if nbeats_model is None:
                     nbeats_model: NBEATSModule = op
                 self._ops.append(op)
                 has_nbeats_modules = True
-        """
+
         if has_nbeats_modules:
             self.nbeats_fc_layers = NBEATSModule.generate_fc_layers(feature_in=window_size,
                                                                     num_fc_layers=nbeats_model.num_fc_layers,
@@ -109,7 +109,6 @@ class MixedFlatEncoderOps(MixedEncoderOps):
                                                                     dropout=nbeats_model.dropout
                                                                     )
         self.has_nbeats_modules = has_nbeats_modules
-        """
 
         self._ops_names = PRIMITIVES
 
@@ -120,11 +119,10 @@ class MixedFlatEncoderOps(MixedEncoderOps):
                 weights of the un-split network, thereby, we need
             alpha_prune_threshold: prune ops during forward pass if alpha below threshold
         """
-        #if self.has_nbeats_modules:
-        #    x_fc_output = self.nbeats_fc_layers(model_input_kwargs['x_past'][:, :, :self.window_size])
-        #else:
-        #    x_fc_output = None
-        x_fc_output = None
+        if self.has_nbeats_modules:
+            x_fc_output = self.nbeats_fc_layers(model_input_kwargs['x_past'][:, :, :self.window_size])
+        else:
+            x_fc_output = None
         return sum(
             weight * op(**model_input_kwargs, x_fc_output=x_fc_output) for weight, op in zip(weights, self._ops) if weight > alpha_prune_threshold
         )
