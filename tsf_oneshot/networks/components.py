@@ -25,17 +25,17 @@ from autoPyTorch.pipeline.components.setup.network_backbone.forecasting_backbone
 
 class EmbeddingLayer(nn.Module):
     # https://github.com/cure-lab/LTSF-Linear/blob/main/layers/Embed.py
-    def __init__(self, c_in, d_model, kernel_size=3):
+    def __init__(self, c_in, d_model, kernel_size=2):
         super(EmbeddingLayer, self).__init__()
         """
         padding = (kernel_size - 1)
         self.tokenConv = nn.Conv1d(in_channels=c_in,
                                    out_channels=d_model,
-                                   kernel_size=3, padding=padding,
+                                   kernel_size=kernel_size, padding=padding,
                                    bias=False
                                    )
         self.chomp1 = _Chomp1d(padding)
-        """
+        #"""
         self.c_in = c_in
         self.d_model = d_model
         self.embedding = nn.Linear(
@@ -67,7 +67,7 @@ class AbstractSearchEncoder(nn.Module):
         self.n_cell_input_nodes = n_cell_input_nodes
 
         # self.embedding_layer = nn.Linear(d_input, d_model, bias=True)
-        self.embedding_layer = EmbeddingLayer(d_input, d_model)
+        self.embedding_layers = nn.ModuleList([EmbeddingLayer(d_input, d_model) for _ in range(n_cell_input_nodes)])
 
         cells = []
         num_edges = None
@@ -135,11 +135,11 @@ class AbstractSearchEncoder(nn.Module):
 
     def forward(self, x: torch.Tensor, **kwargs):
         if isinstance(x, torch.Tensor):
-            embedding = self.embedding_layer(x)
+            embedding = self.embedding_layers[0](x)
             states = [embedding] * self.n_cell_input_nodes
         elif isinstance(x, list):
             # TODO check the cases when len(states) != self.n_cell_input_nodes !!!
-            states = [self.embedding_layer(x_) for x_ in x]
+            states = [embedding_layer(x_) for x_, embedding_layer in zip(x, self.embedding_layers)]
         else:
             raise NotImplementedError(f'Unknown input type: {type(x)}')
         return self.cells_forward(states, **kwargs)
@@ -198,8 +198,6 @@ class SearchGDASEncoder(AbstractSearchEncoder):
 class SearchDARTSDecoder(SearchDARTSEncoder):
     def __init__(self, use_psec=True, **kwargs):
         super(SearchDARTSDecoder, self).__init__(**kwargs)
-        if use_psec:
-            self.embedding_layer = nn.Sequential(self.embedding_layer, PositionalEncoding(self.embedding_layer.d_model))
 
     @staticmethod
     def get_cell(**kwargs):
@@ -259,8 +257,6 @@ class LinearDecoder(nn.Module):
 class SearchGDASDecoder(SearchDARTSDecoder):
     def __init__(self, use_psec=True, **kwargs):
         super(SearchDARTSDecoder, self).__init__(**kwargs)
-        if use_psec:
-            self.embedding_layer = nn.Sequential(self.embedding_layer, PositionalEncoding(self.embedding_layer.d_model))
 
     @staticmethod
     def get_cell(**kwargs):

@@ -204,6 +204,10 @@ class NBEATSModule(nn.Module):
         backcast = self.backcast_head(x_fc_output)
         block_out = torch.cat([-backcast, forecast], dim=-1).view(x_past_input)
         return block_out + x_past
+        #if not self.is_last_layer:
+        #    return self.dropout_layer(self.norm_layer(block_out + x_past))
+        #else:
+        #    return block_out + x_past
 
 
 class NHitsModule(nn.Module):
