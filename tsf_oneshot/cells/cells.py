@@ -719,4 +719,7 @@ class SampledFlatEncoderCell(SampledEncoderCell):
         return edge_out
 
     def process_output(self, states: list[torch.Tensor]):
+        backcast = states[-1][:, :, :self.window_size]
+        forecast = sum(state[:, :, self.window_size:] for state in states[self.n_input_nodes:]) / (len(states) - self.n_input_nodes)
+        return torch.cat([backcast, forecast], -1)
         return states[-1]
