@@ -64,7 +64,7 @@ class LSTMEncoderModule(nn.Module):
 
 class TransformerEncoderModule(nn.Module):
     def __init__(self, d_model: int, window_size:int, nhead: int = 8, activation='gelu', dropout: float = 0.2,
-                 is_casual_model: bool = False, is_first_layer: bool = False):
+                 is_casual_model: bool = False, is_first_layer: bool = False, **kwargs):
         super(TransformerEncoderModule, self).__init__()
         self.cell = nn.TransformerEncoderLayer(d_model, nhead=nhead, dim_feedforward=4 * d_model, batch_first=True,
                                                dropout=dropout,

@@ -17,6 +17,7 @@ from tsf_oneshot.cells.cells import (
     SearchGDASFlatEncoderCell
 )
 from tsf_oneshot.cells.ops import PRIMITIVES_Encoder, PRIMITIVES_FLAT_ENCODER
+from tsf_oneshot.cells.encoders.flat_components import TSMLPBatchNormLayer
 from tsf_oneshot.cells.encoders.components import _Chomp1d
 from autoPyTorch.pipeline.components.setup.network_backbone.forecasting_backbone.components_util import (
     PositionalEncoding
@@ -235,21 +236,21 @@ class LinearDecoder(nn.Module):
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(dropout)
         self.linear_decoder = nn.Sequential(
-                nn.Linear(window_size, forecasting_horizon, bias=False),
-                self.norm,
-                nn.ReLU(),
-                nn.Dropout(dropout),
+            nn.Linear(window_size + forecasting_horizon, forecasting_horizon),
+            self.norm,
+            nn.ReLU(),
+            nn.Dropout(dropout),
             )
 
     def forward(self, x: torch.Tensor, net_encoder_output: torch.Tensor, **kwargs):
-        #if isinstance(x, torch.Tensor):
-        #    embedding = self.embedding_layer(x)
-        #elif isinstance(x, list):
-        #    # TODO check the cases when len(states) != self.n_cell_input_nodes !!!
-        #    embedding = self.embedding_layer(x[-1])
-        #else:
-        #    raise NotImplementedError
-        #net_encoder_output = torch.cat([net_encoder_output, embedding], dim=1)
+        if isinstance(x, torch.Tensor):
+            embedding = self.embedding_layer(x)
+        elif isinstance(x, list):
+            # TODO check the cases when len(states) != self.n_cell_input_nodes !!!
+            embedding = self.embedding_layer(x[-1])
+        else:
+            raise NotImplementedError
+        net_encoder_output = torch.cat([net_encoder_output, embedding], dim=1)
 
         return self.linear_decoder(net_encoder_output.permute(0, 2, 1)).permute(0, 2, 1)
 
