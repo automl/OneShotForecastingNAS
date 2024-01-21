@@ -55,20 +55,25 @@ class LSTMDecoderModule(ForecastingDecoderLayer):
 
 
 class TransformerDecoderModule(ForecastingDecoderLayer):
-    def __init__(self, d_model: int, nhead: int = 8, activation='gelu', dropout:float=0.2, is_first_layer: bool = False):
+    def __init__(self, d_model: int, window_size: int, nhead: int = 8, activation='gelu', dropout:float=0.2, is_first_layer: bool = False):
         super(TransformerDecoderModule, self).__init__()
         self.cell = nn.TransformerDecoderLayer(d_model, nhead=nhead, dim_feedforward=4 * d_model,dropout=dropout, batch_first=True, activation=activation)
         self.is_first_layer = is_first_layer
         # we apply posititional encoding to all decoder inputs
         if self.is_first_layer:
             self.ps_encoding = PositionalEncoding(d_model=d_model)
-        self.ps_encoding = PositionalEncoding(d_model=d_model)
+            W_pos = torch.empty((window_size, d_model))
+            self.dropout = nn.Dropout(dropout)
+            nn.init.uniform_(W_pos, -0.02, 0.02)
+            self.ps_encoding = nn.Parameter(W_pos, requires_grad=True)
+
+        #self.ps_encoding = PositionalEncoding(d_model=d_model)
 
     def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
                 hx1: torch.Tensor, hx2: torch.Tensor):
         mask = nn.Transformer.generate_square_subsequent_mask(x_future.shape[1], device=x_future.device)
         if self.is_first_layer:
-            x_future = self.ps_encoding(x_future)
+            x_future = self.dropout(self.ps_encoding + x_future)
         output = self.cell(x_future, memory=encoder_output_net, tgt_mask=mask)
 
         return output

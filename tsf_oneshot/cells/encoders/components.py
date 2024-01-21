@@ -6,10 +6,8 @@ from torch.nn.utils import weight_norm
 
 from tsf_oneshot.cells.encoders.flat_components import TSMLPBatchNormLayer
 
-from autoPyTorch.pipeline.components.setup.network_backbone.forecasting_backbone.components_util import \
-    PositionalEncoding
 
-TCN_DEFAULT_KERNEL_SIZE = 15
+TCN_DEFAULT_KERNEL_SIZE = 7
 
 
 class GRUEncoderModule(nn.Module):
@@ -65,7 +63,7 @@ class LSTMEncoderModule(nn.Module):
 
 
 class TransformerEncoderModule(nn.Module):
-    def __init__(self, d_model: int, nhead: int = 8, activation='gelu', dropout: float = 0.2,
+    def __init__(self, d_model: int, window_size:int, nhead: int = 8, activation='gelu', dropout: float = 0.2,
                  is_casual_model: bool = False, is_first_layer: bool = False):
         super(TransformerEncoderModule, self).__init__()
         self.cell = nn.TransformerEncoderLayer(d_model, nhead=nhead, dim_feedforward=4 * d_model, batch_first=True,
@@ -75,8 +73,11 @@ class TransformerEncoderModule(nn.Module):
         self.hx_encoder_layer = nn.Linear(d_model, d_model)
         self.is_first_layer = is_first_layer
         if self.is_first_layer:
-            self.ps_encoding = PositionalEncoding(d_model=d_model, dropout=dropout)
-        self.ps_encoding = PositionalEncoding(d_model=d_model, dropout=dropout)
+            W_pos = torch.empty((window_size, d_model))
+            # https://github.com/yuqinie98/PatchTST/blob/main/PatchTST_supervised/layers/PatchTST_layers.py#L96
+            self.dropout = nn.Dropout(dropout)
+            nn.init.uniform_(W_pos, -0.02, 0.02)
+            self.ps_encoding = nn.Parameter(W_pos, requires_grad=True)
 
     def forward(self, x_past: torch.Tensor, hx: Any | None = None):
         if self.is_casual_model:
@@ -84,7 +85,8 @@ class TransformerEncoderModule(nn.Module):
         else:
             mask = None
         if self.is_first_layer:
-            x_past = self.ps_encoding(x_past)
+            #x_past = self.ps_encoding(x_past)
+            x_past = self.dropout(self.ps_encoding + x_past)
         output = self.cell(x_past, src_mask=mask)
         # Hidden States
         hidden_states = output[:, [-1]].transpose(0, 1)
@@ -126,6 +128,7 @@ class TCNEncoderModule(nn.Module):
         self.norm = nn.LayerNorm(d_model)
 
         self.hx_encoder_layer = nn.Linear(d_model, d_model)
+        self.dropout = nn.Dropout(dropout)
 
         self.init_weights()
 
@@ -139,10 +142,8 @@ class TCNEncoderModule(nn.Module):
         out = self.net(x_past)
         out = self.relu(out + x_past)
         out = out.transpose(1, 2).contiguous()
-        out = self.norm(out)
-
         hx = out[:, [-1]].transpose(0, 1)
-        return out, hx, self.hx_encoder_layer(hx)
+        return self.dropout(self.norm(out)), hx, self.hx_encoder_layer(hx)
 
 
 class MLPMixEncoderModule(nn.Module):
