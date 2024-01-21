@@ -31,14 +31,15 @@ def add_outputs(input1: list, input2: list, weights: torch.Tensor | None = None)
                 return [*input1[:-1], input1[-1] + input2]
             else:
                 assert len(weights) == 2
-                return [*[ipt * weights[0] for ipt in input1[:-1]], input1[-1] * weights[0] + input2 * weights[1]]
+                return [add_outputs(ipt, input2, weights) for ipt in input1]
+                #return [*[ipt * weights[0] for ipt in input1[:-1]], input1[-1] * weights[0] + input2 * weights[1]]
     elif isinstance(input1, torch.Tensor):
         if isinstance(input2, (list, tuple)):
             if weights is None:
                 return [*input2[:-1], input1 + input2[-1]]
             else:
-                assert len(weights) == 2
-                return [*[ipt * weights[1] for ipt in input2[:-1]], input1 * weights[0] + input2[-1] * weights[1]]
+                return [add_outputs(input1, ipt, weights) for ipt in input2]
+                #return [*[ipt * weights[1] + input2[-1] * weights[1] for ipt in input2[:-1]], input1 * weights[0] + input2[-1] * weights[1]]
         else:
             if weights is None:
                 return input1 + input2

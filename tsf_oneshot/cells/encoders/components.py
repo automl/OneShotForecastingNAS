@@ -75,8 +75,8 @@ class TransformerEncoderModule(nn.Module):
         self.hx_encoder_layer = nn.Linear(d_model, d_model)
         self.is_first_layer = is_first_layer
         if self.is_first_layer:
-            self.ps_encoding = PositionalEncoding(d_model=d_model)
-        self.ps_encoding = PositionalEncoding(d_model=d_model)
+            self.ps_encoding = PositionalEncoding(d_model=d_model, dropout=dropout)
+        self.ps_encoding = PositionalEncoding(d_model=d_model, dropout=dropout)
 
     def forward(self, x_past: torch.Tensor, hx: Any | None = None):
         if self.is_casual_model:
