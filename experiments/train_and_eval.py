@@ -210,6 +210,10 @@ def main(cfg: omegaconf.DictConfig):
                                     'forecasting_horizon': n_prediction_steps,
                                     'window_size': window_size,
                                 }
+        ops_kwargs['transformer'] = {
+            'forecasting_horizon': n_prediction_steps,
+            'window_size': window_size,
+        }
         heads_kwargs = cfg_model.get('heads_kwargs', {})
 
         net_init_kwargs.update(
@@ -257,6 +261,10 @@ def main(cfg: omegaconf.DictConfig):
                     'forecasting_horizon': n_prediction_steps,
                     'window_size': window_size,
                 }
+        ops_kwargs_seq['transformer'] = {
+            'forecasting_horizon': n_prediction_steps,
+            'window_size': window_size,
+        }
         heads_kwargs_seq = cfg_model['flat_model'].get('head_kwargs', {})
 
         ops_kwargs_flat = cfg_model['flat_model'].get('model_kwargs', {})
