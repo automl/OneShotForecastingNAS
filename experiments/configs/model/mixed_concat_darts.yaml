@@ -18,7 +18,7 @@ seq_model:
 flat_model:
   n_cells: 1
   n_nodes: 4
-  n_cell_input_nodes: 2
+  n_cell_input_nodes: 1
   backcast_loss_ration: 0.0
   PRIMITIVES_encoder: [ 'mlp','nbeats_g','nbeats_s', 'nbeats_t', 'skip_connection' ]
 
