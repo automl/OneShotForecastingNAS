@@ -29,7 +29,7 @@ class AbstractSearchEncoderCell(nn.Module):
                  n_input_nodes: int = 1,
                  PRIMITIVES: list[str] = PRIMITIVES_Encoder.keys(),
                  OPS_kwargs: dict[str, dict] = {},
-                 is_first_cell: bool = False,
+                 cell_idx: int = 0,
                  aggregtrate_type: str = 'mean',
                  **kwargs,
                  ):
@@ -63,7 +63,7 @@ class AbstractSearchEncoderCell(nn.Module):
                 else:
                     OPS_kwargs_.update({'tcn': {'dilation': dilation}})
 
-                if is_first_cell:
+                if cell_idx == 0:
                     if i == n_input_nodes:
                         if 'transformer' in OPS_kwargs_:
                             OPS_kwargs_['transformer'].update(
@@ -71,10 +71,21 @@ class AbstractSearchEncoderCell(nn.Module):
                             )
                         else:
                             OPS_kwargs_.update({'transformer': {'is_first_layer': True}})
+                ts_skip_size = int(2 ** max((j - self.n_input_nodes +1 + cell_idx * 3), 0))
+                if 'lstm' in OPS_kwargs_:
+                    OPS_kwargs_['lstm'].update({'ts_skip_size': ts_skip_size})
+                else:
+                    OPS_kwargs_.update({'lstm': {'ts_skip_size': ts_skip_size}})
+
+                if 'gru' in OPS_kwargs_:
+                    OPS_kwargs_['gru'].update({'ts_skip_size': ts_skip_size})
+                else:
+                    OPS_kwargs_.update({'gru': {'ts_skip_size': ts_skip_size}})
+
                 node_str = f"{i}<-{j}"
                 op = self.op_types(self.d_model,
                                    PRIMITIVES=PRIMITIVES,
-                                   OPS_kwargs=OPS_kwargs_)  # TODO check if PRIMITIVES fits the requirements?
+                                   OPS_kwargs=OPS_kwargs_,)  # TODO check if PRIMITIVES fits the requirements?
                 self.edges[node_str] = op
 
         self.edge_keys = sorted(list(self.edges.keys()))
@@ -535,7 +546,7 @@ class SampledEncoderCell(nn.Module):
                  has_edges: list[bool],
                  PRIMITIVES: list[str] = PRIMITIVES_Encoder.keys(),
                  OPS_kwargs: dict[str, dict] = {},
-                 is_first_cell: bool = False, ):
+                 cell_idx: int = 0, ):
         """
         Args:
             n_nodes (int): Number of intermediate nodes. The output of the cell is calculated by
@@ -557,7 +568,7 @@ class SampledEncoderCell(nn.Module):
             # The first 2 nodes are input nodes
             for j in range(i):
                 OPS_kwargs_ = copy.copy(OPS_kwargs)
-                if is_first_cell:
+                if cell_idx == 0:
                     if i == n_input_nodes:
                         if 'transformer' in OPS_kwargs_:
                             OPS_kwargs_['transformer'].update(
@@ -566,20 +577,19 @@ class SampledEncoderCell(nn.Module):
                         else:
                             OPS_kwargs_.update({'transformer': {'is_first_layer': True}})
 
-                dilation = int(2 ** max((j - 1), 0))
+                ts_skip_size = int(2 ** max((j - self.n_input_nodes +1 + cell_idx * 3), 0))
                 if 'tcn' in OPS_kwargs_:
-                    OPS_kwargs_['tcn'].update({'dilation': dilation})
+                    OPS_kwargs_['tcn'].update({'dilation': ts_skip_size})
                 else:
-                    OPS_kwargs_.update({'tcn': {'dilation': dilation}})
+                    OPS_kwargs_.update({'tcn': {'dilation': ts_skip_size}})
 
                 if has_edges[k]:
                     node_str = f"{i}<-{j}"
                     op_name = PRIMITIVES[operations[k]]
                     op_kwargs = OPS_kwargs_.get(op_name, {})
-                    op = self.all_ops[op_name](self.d_model, **op_kwargs)
+                    op = self.all_ops[op_name](self.d_model, ts_skip_size=ts_skip_size, **op_kwargs)
                     self.edges[node_str] = op
                 k += 1
-
         self.edge_keys = sorted(list(self.edges.keys()))
         self.edge2index = {key: i for i, key in enumerate(self.edge_keys)}
         self.num_edges = len(self.edges)
@@ -613,8 +623,8 @@ class SampledEncoderCell(nn.Module):
                 node_str = f"{i}<-{j}"
                 if node_str in self.edges:
                     s_curs.append(self.get_edge_out(node_str=node_str, x=states[j], **kwargs))
-
             states.append(self.aggregate_edges_outputs(s_curs))
+
 
         return self.process_output(states)
 

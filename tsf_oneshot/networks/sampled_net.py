@@ -57,7 +57,7 @@ class SampledEncoder(AbstractSearchEncoder):
                                  operations=operations,
                                  has_edges=has_edges,
                                  PRIMITIVES=PRIMITIVES,
-                                 is_first_cell=(i == 0),
+                                 cell_idx=i,
                                  OPS_kwargs=OPS_kwargs,
                                  )
             cells.append(cell)

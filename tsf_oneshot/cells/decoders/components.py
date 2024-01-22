@@ -29,29 +29,55 @@ class ForecastingDecoderLayer(nn.Module):
 
 
 class GRUDecoderModule(ForecastingDecoderLayer):
-    def __init__(self, d_model: int, bias: bool = True, dropout: float=0.2):
+    def __init__(self, d_model: int, ts_skip_size:int=1, bias: bool = True, dropout: float=0.2):
         super(GRUDecoderModule, self).__init__()
         self.cell = nn.GRU(input_size=d_model, hidden_size=d_model, bias=bias, num_layers=1, batch_first=True)
         self.norm = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(dropout)
+        self.ts_skip_size = ts_skip_size
 
     def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
                 hx1: torch.Tensor, hx2: torch.Tensor):
+        if self.ts_skip_size > 1:
+            B, L, N = x_future.shape
+            L_add = L % self.ts_skip_size
+            if L_add != 0:
+                x_future = nn.functional.pad(x_future, (0, 0, 0, self.ts_skip_size - L_add), 'constant', 0)
+            x_future = x_future.view(B, -1, self.ts_skip_size, N).transpose(2, 1).reshape(B * self.ts_skip_size, -1, N)
+            hx1 = hx1.repeat(1, self.ts_skip_size, 1)
+
         output, _ = self.cell(x_future, hx1)
-        return self.dropout(self.norm(output))
+        
+        if self.ts_skip_size > 1:
+            output = output.view(B, self.ts_skip_size, -1, N).transpose(2, 1).reshape(B, -1, N)[:,:L,:]
+            
+        return self.dropout(output)
 
 
 class LSTMDecoderModule(ForecastingDecoderLayer):
-    def __init__(self, d_model: int, bias: bool = True, dropout: float=0.2):
+    def __init__(self, d_model: int, ts_skip_size:int=1, bias: bool = True, dropout: float=0.2):
         super(LSTMDecoderModule, self).__init__()
         self.cell = nn.LSTM(input_size=d_model, hidden_size=d_model, bias=bias, num_layers=1, batch_first=True)
         self.norm = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(dropout)
+        self.ts_skip_size = ts_skip_size
+
 
     def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
                 hx1: torch.Tensor, hx2: torch.Tensor):
+        if self.ts_skip_size > 1:
+            B, L, N = x_future.shape
+            L_add = L % self.ts_skip_size
+            if L_add != 0:
+                x_future = nn.functional.pad(x_future, (0, 0, 0, self.ts_skip_size - L_add), 'constant', 0)
+            x_future = x_future.view(B, -1, self.ts_skip_size, N).transpose(2, 1).reshape(B * self.ts_skip_size, -1, N)
+            hx1 = hx1.repeat(1, self.ts_skip_size, 1)
+            hx2 = hx2.repeat(1, self.ts_skip_size, 1)
         output, _ = self.cell(x_future, (hx1, hx2))
-        return self.dropout(self.norm(output))
+
+        if self.ts_skip_size > 1:
+            output = output.view(B, self.ts_skip_size, -1, N).transpose(2, 1).reshape(B, -1, N)[:,:L,:]
+        return self.dropout(output)
 
 
 class TransformerDecoderModule(ForecastingDecoderLayer):
@@ -82,7 +108,7 @@ class TransformerDecoderModule(ForecastingDecoderLayer):
 class TCNDecoderModule(ForecastingDecoderLayer):
     def __init__(self, d_model: int,
                  kernel_size: int = TCN_DEFAULT_KERNEL_SIZE,
-                 stride: int = 1, dilation: int = 1, dropout: float = 0.2):
+                 stride: int = 1, dilation: int = 1, dropout: float = 0.2, **kwargs):
         super(TCNDecoderModule, self).__init__()
         padding = (kernel_size - 1) * dilation
         self.conv1 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,
@@ -131,7 +157,7 @@ class MLPMixDecoderModule(ForecastingDecoderLayer):
                  window_size: int,
                  forecasting_horizon: int,
                  dropout: float=0.2,
-                 d_ff: int | None = None):
+                 d_ff: int | None = None, **kwargs):
         super(MLPMixDecoderModule, self).__init__()
         if d_ff is None:
             d_ff = 2 * d_model
@@ -233,7 +259,7 @@ class MLPDecoderModule(ForecastingDecoderLayer):
 """
 
 class IdentityDecoderModule(ForecastingDecoderLayer):
-    def __init__(self, d_model: int):
+    def __init__(self, d_model: int, **kwargse):
         super().__init__()
 
     def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,

@@ -11,7 +11,7 @@ TCN_DEFAULT_KERNEL_SIZE = 7
 
 
 class GRUEncoderModule(nn.Module):
-    def __init__(self, d_model: int, bias: bool = True, bidirectional: bool = False, dropout: float = 0.2):
+    def __init__(self, d_model: int, ts_skip_size: int = 1, bias: bool = True, bidirectional: bool = False, dropout: float = 0.2):
         super(GRUEncoderModule, self).__init__()
         self.norm = nn.LayerNorm(d_model)
         d_input = d_model
@@ -26,18 +26,32 @@ class GRUEncoderModule(nn.Module):
         self.bidirectional = bidirectional
         self.d_model = d_model
         self.dropout = nn.Dropout(dropout)
+        self.ts_skip_size = ts_skip_size
 
     def forward(self, x_past: torch.Tensor, hx: Tuple[torch.Tensor] | None = None):
+        if self.ts_skip_size > 1:
+            B, L, N = x_past.shape
+            L_add = L % self.ts_skip_size
+            if L_add != 0:
+                x_past = nn.functional.pad(x_past, (0, 0, 0, self.ts_skip_size - L_add), 'constant', 0)
+            x_past = x_past.view(B, -1, self.ts_skip_size, N).transpose(2, 1).reshape(B * self.ts_skip_size, -1, N)
+
         output, hx = self.cell(x_past, hx)
+
         if self.bidirectional:
             # we ask the output to be
             output = torch.cat([output[:, :, :self.d_model], torch.flip(output[:, :, :self.d_model], dims=(1,))], -1)
             hx = torch.cat([hx[:1, :, :], torch.flip(hx[1:, :, :], dims=(1,))], -1)
-        return self.dropout(self.norm(output)), hx, self.hx_encoder_layer(hx)
+
+        if self.ts_skip_size > 1:
+            output = output.view(B, self.ts_skip_size, -1, N).transpose(2, 1).reshape(B, -1, N)[:,:L,:]
+            hx = hx[:, :B,:]
+
+        return self.dropout(output), hx, self.hx_encoder_layer(hx)
 
 
 class LSTMEncoderModule(nn.Module):
-    def __init__(self, d_model: int, bias: bool = True, bidirectional: bool = False, dropout=0.2):
+    def __init__(self, d_model: int, ts_skip_size:int=1, bias: bool = True, bidirectional: bool = False, dropout=0.2):
         super(LSTMEncoderModule, self).__init__()
         self.norm = nn.LayerNorm(d_model)
         d_input = d_model
@@ -50,8 +64,16 @@ class LSTMEncoderModule(nn.Module):
         self.bidirectional = bidirectional
         self.d_model = d_model
         self.dropout = nn.Dropout(dropout)
+        self.ts_skip_size = ts_skip_size
 
     def forward(self, x_past: torch.Tensor, hx: Tuple[torch.Tensor] | None = None):
+        if self.ts_skip_size > 1:
+            B, L, N = x_past.shape
+            L_add = L % self.ts_skip_size
+            if L_add != 0:
+                x_past = nn.functional.pad(x_past, (0, 0, 0, self.ts_skip_size - L_add), 'constant', 0)
+            x_past = x_past.view(B, -1, self.ts_skip_size, N).transpose(2, 1).reshape(B * self.ts_skip_size, -1, N)
+
         output, hx = self.cell(x_past, hx)
         if self.bidirectional:
             output = torch.cat([output[:, :, :self.d_model], torch.flip(output[:, :, :self.d_model], dims=(1,))], -1)
@@ -59,7 +81,11 @@ class LSTMEncoderModule(nn.Module):
                 torch.cat([hx[0][:1, :, :], torch.flip(hx[0][1:, :, :], dims=(1,))], -1),
                 torch.cat([hx[1][:1, :, :], torch.flip(hx[1][1:, :, :], dims=(1,))], -1),
             )
-        return self.dropout(self.norm(output)), *hx
+
+        if self.ts_skip_size > 1:
+            output = output.view(B, self.ts_skip_size, -1, N).transpose(2, 1).reshape(B, -1, N)[:,:L,:]
+            hx = (hx[0][:, :B,:], hx[1][:, :B,:])
+        return self.dropout(output), *hx
 
 
 class TransformerEncoderModule(nn.Module):
@@ -107,8 +133,9 @@ class _Chomp1d(nn.Module):
 
 class TCNEncoderModule(nn.Module):
     def __init__(self, d_model: int, kernel_size: int = TCN_DEFAULT_KERNEL_SIZE, stride: int = 1, dilation: int = 1,
-                 dropout: float = 0.2):
+                 dropout: float = 0.2, **kwargs):
         super(TCNEncoderModule, self).__init__()
+        #dilation = ts_skip_size
         padding = (kernel_size - 1) * dilation
         self.conv1 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,
                                            stride=stride, padding=padding, dilation=dilation))
@@ -150,7 +177,7 @@ class MLPMixEncoderModule(nn.Module):
     # https://arxiv.org/pdf/2303.06053.pdf
     # https://github.com/google-research/google-research/blob/master/tsmixer/tsmixer_basic/models/tsmixer.py
     def __init__(self, d_model: int, window_size: int, dropout: float = 0.2,
-                 forecasting_horizon: int = 0, d_ff: int | None = None):
+                 forecasting_horizon: int = 0, d_ff: int | None = None, **kwargs):
         super(MLPMixEncoderModule, self).__init__()
         self.time_mixer = nn.Sequential(
             nn.Linear(window_size, window_size),
@@ -190,7 +217,7 @@ class MLPMixEncoderModule(nn.Module):
 
 
 class IdentityEncoderModule(nn.Module):
-    def __init__(self, d_model: int):
+    def __init__(self, d_model: int, **kwargs):
         super().__init__()
         self.hx_encoder_layer = nn.Linear(d_model, d_model)
 
