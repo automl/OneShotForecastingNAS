@@ -24,6 +24,40 @@ from autoPyTorch.pipeline.components.setup.network_backbone.forecasting_backbone
 )
 
 
+class moving_avg(nn.Module):
+    """
+    Moving average block to highlight the trend of time series
+    from https://github.com/cure-lab/LTSF-Linear/blob/main/models/DLinear.py
+    """
+    def __init__(self, kernel_size, stride):
+        super(moving_avg, self).__init__()
+        self.kernel_size = kernel_size
+        self.avg = nn.AvgPool1d(kernel_size=kernel_size, stride=stride, padding=0)
+
+    def forward(self, x):
+        # padding on the both ends of time series
+        front = x[:, 0:1, :].repeat(1, (self.kernel_size - 1) // 2, 1)
+        end = x[:, -1:, :].repeat(1, (self.kernel_size - 1) // 2, 1)
+        x = torch.cat([front, x, end], dim=1)
+        x = self.avg(x.permute(0, 2, 1))
+        x = x.permute(0, 2, 1)
+        return x
+
+
+class series_decomp(nn.Module):
+    """
+    Series decomposition block
+    from https://github.com/cure-lab/LTSF-Linear/blob/main/models/DLinear.py
+    """
+    def __init__(self, kernel_size):
+        super(series_decomp, self).__init__()
+        self.moving_avg = moving_avg(kernel_size, stride=1)
+
+    def forward(self, x):
+        moving_mean = self.moving_avg(x)
+        res = x - moving_mean
+        return res, moving_mean
+
 class EmbeddingLayer(nn.Module):
     # https://github.com/cure-lab/LTSF-Linear/blob/main/layers/Embed.py
     def __init__(self, c_in, d_model, kernel_size=2):
@@ -236,21 +270,21 @@ class LinearDecoder(nn.Module):
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(dropout)
         self.linear_decoder = nn.Sequential(
-            nn.Linear(window_size + forecasting_horizon, forecasting_horizon),
+            nn.Linear(window_size, forecasting_horizon),
             self.norm,
             nn.ReLU(),
             nn.Dropout(dropout),
             )
 
     def forward(self, x: torch.Tensor, net_encoder_output: torch.Tensor, **kwargs):
-        if isinstance(x, torch.Tensor):
-            embedding = self.embedding_layer(x)
-        elif isinstance(x, list):
-            # TODO check the cases when len(states) != self.n_cell_input_nodes !!!
-            embedding = self.embedding_layer(x[-1])
-        else:
-            raise NotImplementedError
-        net_encoder_output = torch.cat([net_encoder_output, embedding], dim=1)
+        #if isinstance(x, torch.Tensor):
+        #    embedding = self.embedding_layer(x)
+        #elif isinstance(x, list):
+        #    # TODO check the cases when len(states) != self.n_cell_input_nodes !!!
+        #    embedding = self.embedding_layer(x[-1])
+        #else:
+        #    raise NotImplementedError
+        #net_encoder_output = torch.cat([net_encoder_output, embedding], dim=1)
 
         return self.linear_decoder(net_encoder_output.permute(0, 2, 1)).permute(0, 2, 1)
 
@@ -348,6 +382,11 @@ class AbstractFlatEncoder(AbstractSearchEncoder):
 
 
 class SearchDARTSFlatEncoder(AbstractFlatEncoder):
+    def __init__(self, **kwargs):
+        super(SearchDARTSFlatEncoder, self).__init__(**kwargs)
+        kernel_size = 25
+        self.decompsition = series_decomp(kernel_size)
+
     @staticmethod
     def get_cell(**kwargs):
         return SearchDARTSFlatEncoderCell(**kwargs)
@@ -356,19 +395,24 @@ class SearchDARTSFlatEncoder(AbstractFlatEncoder):
         # we always transform the input multiple_series map into independent single series input
 
         x = x[:, :, :self.d_output]
-        # This result in a feature map of size [B, N, L, 1]
-        past_targets = torch.transpose(x, -1, -2)
 
-        future_targets = torch.zeros([*past_targets.shape[:-1], self.forecasting_horizon], device=past_targets.device,
-                                     dtype=past_targets.dtype)
-        embedding = torch.cat(
-            [past_targets, future_targets], dim=-1
-        )
-        states = [embedding]
+        seasonal_init, trend_init = self.decompsition(x)
+        # This result in a feature map of size [B*N, L, 1]
+        #past_targets = torch.transpose(x_past, -1, -2)
+        x_s = torch.transpose(seasonal_init, -1, -2)
+        x_t = torch.transpose(trend_init, -1, -2)
+        future_targets = torch.zeros([*x_s.shape[:-1], self.forecasting_horizon], device=x_s.device,
+                                     dtype=x_s.dtype)
+        embedding_s = torch.cat([x_s, future_targets], dim=-1)
+        embedding_t = torch.cat([x_t, future_targets], dim=-1)
 
-        cell_out = self.cells_forward(states, w_dag)
+        states = [embedding_s, embedding_t]
+        for cell in self.cells:
+            cell_out = cell(s_previous=states, w_dag=w_dag)
+            states = [*states[1:], cell_out]
 
         cell_out = cell_out.transpose(-1, -2)
+
         return cell_out
 
     def cells_forward(self, states: list[torch], w_dag: torch.Tensor, **kwargs):

@@ -7,7 +7,7 @@ import inspect
 
 import torch
 from torch import nn
-from tsf_oneshot.networks.components import EmbeddingLayer, AbstractSearchEncoder, LinearDecoder
+from tsf_oneshot.networks.components import EmbeddingLayer, AbstractSearchEncoder, LinearDecoder, series_decomp
 from tsf_oneshot.networks.combined_net_utils import (
     get_kwargs,
     forward_concat_net,
@@ -397,6 +397,9 @@ class SampledFlatNet(SampledNet):
 
         self._device = torch.device('cpu')
 
+        kernel_size = 25
+        self.decompsition = series_decomp(kernel_size)
+
     @staticmethod
     def get_cell(**kwargs):
         return SampledFlatEncoderCell(**kwargs)
@@ -406,16 +409,21 @@ class SampledFlatNet(SampledNet):
                 forward_only_with_net: bool = False):
         # we always transform the input multiple_series map into independent single series input
         batch_size = x_past.shape[0]
+
         # we only take the past targets
         x_past = x_past[:, :, :self.d_output]
+
+        seasonal_init, trend_init = self.decompsition(x_past)
         # This result in a feature map of size [B*N, L, 1]
-        past_targets = torch.transpose(x_past, -1, -2)
-        future_targets = torch.zeros([*past_targets.shape[:-1], self.forecasting_horizon], device=past_targets.device,
-                                     dtype=past_targets.dtype)
-        embedding = torch.cat(
-            [past_targets, future_targets], dim=-1
-        )
-        states = [embedding]
+        #past_targets = torch.transpose(x_past, -1, -2)
+        past_targets_s = torch.transpose(seasonal_init, -1, -2)
+        past_targets_t = torch.transpose(trend_init, -1, -2)
+        future_targets = torch.zeros([*past_targets_s.shape[:-1], self.forecasting_horizon], device=past_targets_s.device,
+                                     dtype=past_targets_s.dtype)
+        embedding_s = torch.cat([past_targets_s, future_targets], dim=-1)
+        embedding_t = torch.cat([past_targets_t, future_targets], dim=-1)
+
+        states = [embedding_s, embedding_t]
         for cell in self.cells:
             cell_out = cell(s_previous=states, )
             states = [*states[1:], cell_out]

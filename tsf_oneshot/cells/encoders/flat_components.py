@@ -10,7 +10,7 @@ from autoPyTorch.pipeline.components.setup.network_head.forecasting_network_head
     get_seasonality_heads
 )
 
-NBEATS_DEFAULT_THETA_DIMS = {'g': 64,
+NBEATS_DEFAULT_THETA_DIMS = {'g': 128,
                              's': 4,
                              't': 4}
 
@@ -115,7 +115,7 @@ class NBEATSModule(nn.Module):
                  window_size: int,
                  forecasting_horizon: int,
                  dropout: float = 0.2,
-                 width=128, num_fc_layers: int = 2, thetas_dim: int = 64,
+                 width=128, num_fc_layers: int = 2, thetas_dim: int = 128,
                  stack_type: str = 't',
                  is_last_layer: bool = False,
                  has_fc_layers: bool = True,
