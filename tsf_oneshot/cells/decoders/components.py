@@ -14,7 +14,7 @@ from tsf_oneshot.cells.encoders.components import _Chomp1d, TCN_DEFAULT_KERNEL_S
 class ForecastingDecoderLayer(nn.Module):
     @abc.abstractmethod
     def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
-                hx1: torch.Tensor, hx2: torch.Tensor):
+                hx1: torch.Tensor, hx2: torch.Tensor, **kwargs):
         """
         A general function to fuse the information from the encoders. Given the different requirements from different
         network components, we will require the following inputs from the encoders
@@ -29,7 +29,7 @@ class ForecastingDecoderLayer(nn.Module):
 
 
 class GRUDecoderModule(ForecastingDecoderLayer):
-    def __init__(self, d_model: int, ts_skip_size:int=1, bias: bool = True, dropout: float=0.2):
+    def __init__(self, d_model: int, ts_skip_size:int=1, bias: bool = True, dropout: float=0.2, **kwargs):
         super(GRUDecoderModule, self).__init__()
         self.cell = nn.GRU(input_size=d_model, hidden_size=d_model, bias=bias, num_layers=1, batch_first=True)
         self.norm = nn.LayerNorm(d_model)
@@ -55,7 +55,7 @@ class GRUDecoderModule(ForecastingDecoderLayer):
 
 
 class LSTMDecoderModule(ForecastingDecoderLayer):
-    def __init__(self, d_model: int, ts_skip_size:int=1, bias: bool = True, dropout: float=0.2):
+    def __init__(self, d_model: int, ts_skip_size:int=1, bias: bool = True, dropout: float=0.2, **kwargs):
         super(LSTMDecoderModule, self).__init__()
         self.cell = nn.LSTM(input_size=d_model, hidden_size=d_model, bias=bias, num_layers=1, batch_first=True)
         self.norm = nn.LayerNorm(d_model)
@@ -81,7 +81,8 @@ class LSTMDecoderModule(ForecastingDecoderLayer):
 
 
 class TransformerDecoderModule(ForecastingDecoderLayer):
-    def __init__(self, d_model: int, forecasting_horizon: int, nhead: int = 8, activation='gelu', dropout:float=0.2, is_first_layer: bool = False, **kwargs):
+    def __init__(self, d_model: int, forecasting_horizon: int,
+                 nhead: int = 8, activation='gelu', dropout:float=0.2, is_first_layer: bool = False, **kwargs):
         super(TransformerDecoderModule, self).__init__()
         self.cell = nn.TransformerDecoderLayer(d_model, nhead=nhead, dim_feedforward=4 * d_model,dropout=dropout, batch_first=True, activation=activation)
         self.is_first_layer = is_first_layer

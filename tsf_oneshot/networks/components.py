@@ -17,11 +17,8 @@ from tsf_oneshot.cells.cells import (
     SearchGDASFlatEncoderCell
 )
 from tsf_oneshot.cells.ops import PRIMITIVES_Encoder, PRIMITIVES_FLAT_ENCODER
-from tsf_oneshot.cells.encoders.flat_components import TSMLPBatchNormLayer
-from tsf_oneshot.cells.encoders.components import _Chomp1d
-from autoPyTorch.pipeline.components.setup.network_backbone.forecasting_backbone.components_util import (
-    PositionalEncoding
-)
+from tsf_oneshot.cells.utils import EmbeddingLayer
+
 
 
 class moving_avg(nn.Module):
@@ -58,35 +55,14 @@ class series_decomp(nn.Module):
         res = x - moving_mean
         return res, moving_mean
 
-class EmbeddingLayer(nn.Module):
-    # https://github.com/cure-lab/LTSF-Linear/blob/main/layers/Embed.py
-    def __init__(self, c_in, d_model, kernel_size=2):
-        super(EmbeddingLayer, self).__init__()
-        """
-        padding = (kernel_size - 1)
-        self.tokenConv = nn.Conv1d(in_channels=c_in,
-                                   out_channels=d_model,
-                                   kernel_size=kernel_size, padding=padding,
-                                   bias=False
-                                   )
-        self.chomp1 = _Chomp1d(padding)
-        #"""
-        self.c_in = c_in
-        self.d_model = d_model
-        self.embedding = nn.Linear(
-            c_in, d_model, bias=False
-        )
-
-    def forward(self, x_past: torch.Tensor):
-        #return self.chomp1(self.tokenConv(x_past.permute(0, 2, 1))).transpose(1, 2)
-        return self.embedding(x_past)
-
 
 class AbstractSearchEncoder(nn.Module):
     def __init__(self,
                  d_input: int,
                  d_model: int,
                  n_cells: int,
+                 window_size: int,
+                 forecasting_horizon: int,
                  n_nodes: int = 4,
                  n_cell_input_nodes: int = 1,
                  PRIMITIVES=PRIMITIVES_Encoder.keys(),
@@ -102,19 +78,23 @@ class AbstractSearchEncoder(nn.Module):
         self.n_cell_input_nodes = n_cell_input_nodes
 
         # self.embedding_layer = nn.Linear(d_input, d_model, bias=True)
-        self.embedding_layers = nn.ModuleList([EmbeddingLayer(d_input, d_model) for _ in range(n_cell_input_nodes)])
 
         cells = []
         num_edges = None
         edge2index = None
+        d_inputs = [d_input] * n_cell_input_nodes
         for i in range(n_cells):
             cell = self.get_cell(n_nodes=n_nodes,
+                                 d_inputs=d_inputs,
+                                 window_size=window_size,
+                                 forecasting_horizon=forecasting_horizon,
                                  n_input_nodes=n_cell_input_nodes,
                                  d_model=d_model,
                                  PRIMITIVES=PRIMITIVES,
                                  cell_idx=i,
                                  OPS_kwargs=OPS_kwargs,
                                  )
+            d_inputs = [*d_inputs[1:], d_model]
             cells.append(cell)
             if num_edges is None:
                 num_edges = cell.num_edges
@@ -170,16 +150,15 @@ class AbstractSearchEncoder(nn.Module):
 
     def forward(self, x: torch.Tensor, **kwargs):
         if isinstance(x, torch.Tensor):
-            embedding = self.embedding_layers[0](x)
-            states = [embedding] * self.n_cell_input_nodes
+            states = [x for _ in range(self.n_cell_input_nodes)] * self.n_cell_input_nodes
         elif isinstance(x, list):
             # TODO check the cases when len(states) != self.n_cell_input_nodes !!!
-            states = [embedding_layer(x_) for x_, embedding_layer in zip(x, self.embedding_layers)]
+            states = x
         else:
             raise NotImplementedError(f'Unknown input type: {type(x)}')
         return self.cells_forward(states, **kwargs)
 
-    def cells_forward(self, **kwargs):
+    def cells_forward(self, states, **kwargs):
         raise NotImplementedError
 
 
@@ -396,6 +375,7 @@ class SearchDARTSFlatEncoder(AbstractFlatEncoder):
 
         x = x[:, :, :self.d_output]
 
+        """
         # This result in a feature map of size [B, N, L, 1]
         past_targets = torch.transpose(x, -1, -2)
 
@@ -405,6 +385,19 @@ class SearchDARTSFlatEncoder(AbstractFlatEncoder):
             [past_targets, future_targets], dim=-1
         )
         states = [embedding]
+        """
+        seasonal_init, trend_init = self.decompsition(x)
+        # This result in a feature map of size [B*N, L, 1]
+        #past_targets = torch.transpose(x_past, -1, -2)
+        x_s = torch.transpose(seasonal_init, -1, -2)
+        x_t = torch.transpose(trend_init, -1, -2)
+        future_targets = torch.zeros([*x_s.shape[:-1], self.forecasting_horizon], device=x_s.device,
+                                     dtype=x_s.dtype)
+        embedding_s = torch.cat([x_s, future_targets], dim=-1)
+        embedding_t = torch.cat([x_t, future_targets], dim=-1)
+
+        states = [embedding_s, embedding_t]
+        #"""
 
         cell_out = self.cells_forward(states, w_dag)
         cell_out = cell_out.transpose(-1, -2)

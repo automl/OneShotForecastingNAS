@@ -7,7 +7,8 @@ import inspect
 
 import torch
 from torch import nn
-from tsf_oneshot.networks.components import EmbeddingLayer, AbstractSearchEncoder, LinearDecoder, series_decomp
+from tsf_oneshot.networks.components import AbstractSearchEncoder, LinearDecoder, series_decomp
+from tsf_oneshot.cells.utils import EmbeddingLayer
 from tsf_oneshot.networks.combined_net_utils import (
     get_kwargs,
     forward_concat_net,
@@ -27,6 +28,8 @@ class SampledEncoder(AbstractSearchEncoder):
                  operations: list[int],
                  has_edges: list[bool],
                  n_cells: int,
+                 window_size: int,
+                 forecasting_horizon:int,
                  n_nodes: int = 4,
                  n_cell_input_nodes: int = 1,
                  PRIMITIVES=PRIMITIVES_Encoder.keys(),
@@ -45,15 +48,18 @@ class SampledEncoder(AbstractSearchEncoder):
         self.n_cell_input_nodes = n_cell_input_nodes
 
         # self.embedding_layer = nn.Linear(d_input, d_model, bias=True)
-        self.embedding_layers = nn.ModuleList([EmbeddingLayer(d_input, d_model) for _ in range(n_cell_input_nodes)])
 
         cells = []
         num_edges = None
         edge2index = None
+        d_inputs = [d_input] * n_cell_input_nodes
         for i in range(n_cells):
             cell = self.get_cell(n_nodes=n_nodes,
                                  n_input_nodes=n_cell_input_nodes,
                                  d_model=d_model,
+                                 d_inputs=d_inputs,
+                                 window_size=window_size,
+                                 forecasting_horizon=forecasting_horizon,
                                  operations=operations,
                                  has_edges=has_edges,
                                  PRIMITIVES=PRIMITIVES,
@@ -61,6 +67,7 @@ class SampledEncoder(AbstractSearchEncoder):
                                  OPS_kwargs=OPS_kwargs,
                                  )
             cells.append(cell)
+            d_inputs = [*d_inputs[1:], cell.d_model]
             if num_edges is None:
                 num_edges = cell.num_edges
                 edge2index = cell.edge2index
@@ -107,8 +114,6 @@ class SampledEncoder(AbstractSearchEncoder):
 class SampledDecoder(SampledEncoder):
     def __init__(self, use_psec=True, **kwargs):
         super(SampledDecoder, self).__init__(**kwargs)
-        if use_psec:
-            self.embedding_layer = nn.Sequential(self.embedding_layer, PositionalEncoding(self.embedding_layer.d_model))
 
     def get_cell(self, **kwargs):
         return SampledDecoderCell(**kwargs)
@@ -192,6 +197,8 @@ class SampledNet(nn.Module):
                               d_model=d_model,
                               n_cells=n_cells,
                               n_nodes=n_nodes,
+                              window_size=window_size,
+                              forecasting_horizon=forecasting_horizon,
                               n_cell_input_nodes=n_cell_input_nodes,
                               PRIMITIVES=PRIMITIVES_encoder,
                               operations=operations_encoder,
@@ -411,9 +418,11 @@ class SampledFlatNet(SampledNet):
         batch_size = x_past.shape[0]
 
         # we only take the past targets
-        x_past = x_past[:, :, :self.d_output]
+        x_past_ = x_past[:, :, :self.d_output]
 
-        seasonal_init, trend_init = self.decompsition(x_past)
+
+        seasonal_init, trend_init = self.decompsition(x_past_)
+        """
         # This result in a feature map of size [B*N, L, 1]
         #past_targets = torch.transpose(x_past, -1, -2)
         past_targets_s = torch.transpose(seasonal_init, -1, -2)
@@ -423,7 +432,14 @@ class SampledFlatNet(SampledNet):
         embedding_s = torch.cat([past_targets_s, future_targets], dim=-1)
         embedding_t = torch.cat([past_targets_t, future_targets], dim=-1)
 
-        states = [embedding_s, embedding_t]
+        states = [embedding_t, embedding_s]
+        #"""
+        past_targets = torch.transpose(x_past_, -1, -2)
+        future_targets = torch.zeros([*past_targets.shape[:-1], self.forecasting_horizon], device=past_targets.device,
+                                     dtype=past_targets.dtype)
+        embedding = torch.cat([past_targets, future_targets], dim=-1)
+        states = [embedding]
+        #"""
         for cell in self.cells:
             cell_out = cell(s_previous=states, )
             states = [*states[1:], cell_out]
@@ -438,7 +454,7 @@ class SampledFlatNet(SampledNet):
         else:
             if self.forecast_only:
                 return self.head(fore_cast)
-            return self.head(back_cast), self.head(fore_cast)
+            return self.head(back_cast), self.head(fore_cast), torch.cat([trend_init, x_past[:, :, self.d_output:]], -1),
 
     @staticmethod
     def load(base_path: Path, device=torch.device('cpu'), model="SampledNet"):
@@ -535,6 +551,8 @@ class AbstractMixedSampledNet(SampledNet):
 
         self.nets_weights = nn.Parameter(torch.Tensor(nets_weights), requires_grad=False)
 
+        self.decompose = series_decomp(kernel_size=25)
+
     def validate_input_kwargs(self, kwargs):
         return kwargs
 
@@ -597,5 +615,6 @@ class MixedConcatSampledNet(AbstractMixedSampledNet):
             seq_net=self.seq_net,
             x_past=x_past,
             x_future=x_future,
+            decompose=self.decompose,
             out_weights=self.transform_nets_weights()
         )

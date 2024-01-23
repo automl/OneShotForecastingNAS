@@ -8,6 +8,7 @@ from torch import nn
 from tsf_oneshot.cells.encoders import PRIMITIVES_Encoder, PRIMITIVES_FLAT_ENCODER
 from tsf_oneshot.cells.decoders import PRIMITIVES_Decoder
 from tsf_oneshot.cells.ops import MixedEncoderOps, MixedDecoderOps, MixedFlatEncoderOps
+from tsf_oneshot.cells.utils import EmbeddingLayer
 
 
 class AbstractSearchEncoderCell(nn.Module):
@@ -26,12 +27,14 @@ class AbstractSearchEncoderCell(nn.Module):
     def __init__(self,
                  n_nodes: int,
                  d_model: int,
+                 d_inputs: list[int],
+                 window_size:int,
+                 forecasting_horizon:int,
                  n_input_nodes: int = 1,
                  PRIMITIVES: list[str] = PRIMITIVES_Encoder.keys(),
                  OPS_kwargs: dict[str, dict] = {},
                  cell_idx: int = 0,
                  aggregtrate_type: str = 'mean',
-                 **kwargs,
                  ):
         """
         Args:
@@ -53,38 +56,30 @@ class AbstractSearchEncoderCell(nn.Module):
         self.edges = nn.ModuleDict()
         self.aggregtrate_type = aggregtrate_type
 
+        assert len(d_inputs) == n_input_nodes
+        self.preprocessing = nn.ModuleList(
+            [
+                nn.Identity() if d_input == d_model else EmbeddingLayer(d_input, d_model) for d_input in d_inputs
+            ]
+        )
+
         for i in range(n_input_nodes, self.max_nodes):
             # The first 2 nodes are input nodes
             for j in range(i):
-                dilation = int(2 ** max((j - 1), 0))
                 OPS_kwargs_ = copy.copy(OPS_kwargs)
-                if 'tcn' in OPS_kwargs_:
-                    OPS_kwargs_['tcn'].update({'dilation': dilation})
-                else:
-                    OPS_kwargs_.update({'tcn': {'dilation': dilation}})
 
-                if cell_idx == 0:
-                    if i == n_input_nodes:
-                        if 'transformer' in OPS_kwargs_:
-                            OPS_kwargs_['transformer'].update(
-                                {'is_first_layer': True}
-                            )
-                        else:
-                            OPS_kwargs_.update({'transformer': {'is_first_layer': True}})
-                ts_skip_size = int(2 ** max((j - self.n_input_nodes +1 + cell_idx * 3), 0))
-                if 'lstm' in OPS_kwargs_:
-                    OPS_kwargs_['lstm'].update({'ts_skip_size': ts_skip_size})
-                else:
-                    OPS_kwargs_.update({'lstm': {'ts_skip_size': ts_skip_size}})
+                is_first_layer = cell_idx == 0 and i == n_input_nodes
 
-                if 'gru' in OPS_kwargs_:
-                    OPS_kwargs_['gru'].update({'ts_skip_size': ts_skip_size})
-                else:
-                    OPS_kwargs_.update({'gru': {'ts_skip_size': ts_skip_size}})
+                ts_skip_size = int(2 ** max((j - self.n_input_nodes + 1 + cell_idx * n_input_nodes), 0))
 
                 node_str = f"{i}<-{j}"
+                ops_kwargs_general = dict(ts_skip_size=1,
+                                          window_size=window_size,
+                                          forecasting_horizon=forecasting_horizon,
+                                          is_first_layer=is_first_layer)
                 op = self.op_types(self.d_model,
                                    PRIMITIVES=PRIMITIVES,
+                                   kwargs_general=ops_kwargs_general,
                                    OPS_kwargs=OPS_kwargs_,)  # TODO check if PRIMITIVES fits the requirements?
                 self.edges[node_str] = op
 
@@ -116,6 +111,7 @@ class AbstractSearchEncoderCell(nn.Module):
             The output tensor of the cell
         """
         states = copy.copy(s_previous)
+        states = [preproc(s) for preproc, s in zip(self.preprocessing, states)]
 
         for i in range(self.n_input_nodes, self.max_nodes):
             s_curs = []
@@ -455,6 +451,8 @@ class SearchDARTSFlatEncoderCell(SearchDARTSEncoderCell):
         self.op_names_all = copy.deepcopy(PRIMITIVES)
         self.n_ops = len(self.op_names_all)
 
+        self.preprocessing = [nn.Identity() for _ in range(n_input_nodes)]
+
 
         self.edges = nn.ModuleDict()
 
@@ -542,6 +540,9 @@ class SampledEncoderCell(nn.Module):
     def __init__(self, n_nodes: int,
                  n_input_nodes: int,
                  d_model: int,
+                 d_inputs: list[int],
+                 window_size:int,
+                 forecasting_horizon:int,
                  operations: list[int],
                  has_edges: list[bool],
                  PRIMITIVES: list[str] = PRIMITIVES_Encoder.keys(),
@@ -563,31 +564,34 @@ class SampledEncoderCell(nn.Module):
         # generate dag
         self.edges = nn.ModuleDict()
 
+        assert len(d_inputs) == n_input_nodes
+        self.preprocessing = nn.ModuleList(
+            [
+                nn.Identity() if d_input == d_model else EmbeddingLayer(d_input, d_model) for d_input in d_inputs
+            ]
+        )
+
         k = 0
         for i in range(n_input_nodes, self.max_nodes):
             # The first 2 nodes are input nodes
             for j in range(i):
-                OPS_kwargs_ = copy.copy(OPS_kwargs)
-                if cell_idx == 0:
-                    if i == n_input_nodes:
-                        if 'transformer' in OPS_kwargs_:
-                            OPS_kwargs_['transformer'].update(
-                                {'is_first_layer': True}
-                            )
-                        else:
-                            OPS_kwargs_.update({'transformer': {'is_first_layer': True}})
-
-                ts_skip_size = int(2 ** max((j - self.n_input_nodes +1 + cell_idx * 3), 0))
-                if 'tcn' in OPS_kwargs_:
-                    OPS_kwargs_['tcn'].update({'dilation': ts_skip_size})
-                else:
-                    OPS_kwargs_.update({'tcn': {'dilation': ts_skip_size}})
-
                 if has_edges[k]:
+                    OPS_kwargs_ = copy.copy(OPS_kwargs)
+
+                    is_first_layer = cell_idx == 0 and i == n_input_nodes
+
+                    dilation = int(2 ** max((j - self.n_input_nodes + 1 + cell_idx * n_input_nodes), 0))
+                    ops_kwargs_general = dict(ts_skip_size=1,
+                                              dilation=dilation,
+                                              window_size=window_size,
+                                              forecasting_horizon=forecasting_horizon,
+                                              is_first_layer=is_first_layer)
+
                     node_str = f"{i}<-{j}"
                     op_name = PRIMITIVES[operations[k]]
                     op_kwargs = OPS_kwargs_.get(op_name, {})
-                    op = self.all_ops[op_name](self.d_model, ts_skip_size=ts_skip_size, **op_kwargs)
+                    op_kwargs.update(ops_kwargs_general)
+                    op = self.all_ops[op_name](self.d_model, **op_kwargs)
                     self.edges[node_str] = op
                 k += 1
         self.edge_keys = sorted(list(self.edges.keys()))
@@ -616,6 +620,8 @@ class SampledEncoderCell(nn.Module):
             The output tensor of the cell
         """
         states = copy.copy(s_previous)
+
+        states = [preproc(s) for preproc, s in zip(self.preprocessing, states)]
 
         for i in range(self.n_input_nodes, self.max_nodes):
             s_curs = []
@@ -683,6 +689,8 @@ class SampledFlatEncoderCell(SampledEncoderCell):
 
         # generate dag
         self.edges = nn.ModuleDict()
+
+        self.preprocessing = [nn.Identity() for _ in range(n_input_nodes)]
 
         k = 0
         n_hits_families = ['nhits_l', 'nhits_n', 'nhits_c']

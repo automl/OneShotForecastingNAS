@@ -18,6 +18,7 @@ from tsf_oneshot.networks.combined_net_utils import (
     forward_concat_net,
     forward_parallel_net
 )
+from tsf_oneshot.networks.components import series_decomp
 
 DECODER_MAPS = {
     'seq': 'seq_decoder',
@@ -68,6 +69,8 @@ class ForecastingAbstractNetwork(nn.Module):
                               d_model=d_model,
                               n_cells=n_cells,
                               n_nodes=n_nodes,
+                              window_size=window_size,
+                              forecasting_horizon=forecasting_horizon,
                               n_cell_input_nodes=n_cell_input_nodes,
                               PRIMITIVES=PRIMITIVES_encoder,
                               OPS_kwargs=OPS_kwargs,
@@ -81,6 +84,8 @@ class ForecastingAbstractNetwork(nn.Module):
                               d_model=d_model,
                               n_cells=n_cells,
                               n_nodes=n_nodes,
+                              window_size=window_size,
+                              forecasting_horizon=forecasting_horizon,
                               n_cell_input_nodes=n_cell_input_nodes,
                               PRIMITIVES=PRIMITIVES_decoder,
                               use_psec=decoder_use_psec,
@@ -346,6 +351,8 @@ class ForecastingAbstractMixedNet(nn.Module):
         self.edge2index_seq = self.seq_net.edge2index
         self.edge2index_flat = self.flat_net.edge2index
 
+        self.decompose = series_decomp(25)
+
     def validate_input_kwargs(self, kwargs):
         return kwargs
 
@@ -393,6 +400,7 @@ class ForecastingAbstractMixedNet(nn.Module):
                                 x_future=x_future,
                                 forecast_only_seq=self.forecast_only_seq,
                                 forecast_only_flat=self.forecast_only_flat,
+                                decompose=self.decompose,
                                 seq_kwargs=seq_kwargs,
                                 flat_kwargs=flat_kwargs,
                                 out_weights=arch_p_net[0],

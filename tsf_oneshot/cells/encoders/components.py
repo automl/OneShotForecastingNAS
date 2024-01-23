@@ -11,7 +11,8 @@ TCN_DEFAULT_KERNEL_SIZE = 7
 
 
 class GRUEncoderModule(nn.Module):
-    def __init__(self, d_model: int, ts_skip_size: int = 1, bias: bool = True, bidirectional: bool = False, dropout: float = 0.2):
+    def __init__(self, d_model: int, ts_skip_size: int = 1, bias: bool = True,
+                 bidirectional: bool = False, dropout: float = 0.2, **kwargs):
         super(GRUEncoderModule, self).__init__()
         self.norm = nn.LayerNorm(d_model)
         d_input = d_model
@@ -51,7 +52,8 @@ class GRUEncoderModule(nn.Module):
 
 
 class LSTMEncoderModule(nn.Module):
-    def __init__(self, d_model: int, ts_skip_size:int=1, bias: bool = True, bidirectional: bool = False, dropout=0.2):
+    def __init__(self, d_model: int, ts_skip_size:int=1, bias: bool = True, bidirectional: bool = False, dropout=0.2,
+                 **kwargs):
         super(LSTMEncoderModule, self).__init__()
         self.norm = nn.LayerNorm(d_model)
         d_input = d_model

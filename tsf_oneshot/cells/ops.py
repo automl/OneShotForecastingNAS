@@ -19,13 +19,17 @@ class MixedEncoderOps(nn.Module):
 
     def __init__(self, d_model: int,
                  PRIMITIVES: list[str],
-                 OPS_kwargs: dict[str, dict] | None = None):
+                 OPS_kwargs: dict[str, dict] | None = None,
+                 kwargs_general: dict | None = None,
+                 ):
         super().__init__()
 
         self._ops = nn.ModuleList()
 
         for primitive in PRIMITIVES:
             op_kwargs = {"d_model": d_model}
+            if kwargs_general is not None:
+                op_kwargs.update(kwargs_general)
             if OPS_kwargs is not None and primitive in OPS_kwargs:
                 op_kwargs.update(OPS_kwargs[primitive])
             op = self.available_ops[primitive](**op_kwargs)
@@ -70,7 +74,8 @@ class MixedFlatEncoderOps(MixedEncoderOps):
     def __init__(self, window_size: int,
                  forecasting_horizon: int,
                  PRIMITIVES: list[str],
-                 OPS_kwargs: dict[str, dict] | None = None):
+                 OPS_kwargs: dict[str, dict] | None = None,
+                 kwargs_general: dict | None = None):
         nn.Module.__init__(self)
 
         self.window_size = window_size
@@ -85,6 +90,8 @@ class MixedFlatEncoderOps(MixedEncoderOps):
         for i, primitive in enumerate(PRIMITIVES):
             op_kwargs = {"window_size": window_size,
                          "forecasting_horizon": forecasting_horizon}
+            if kwargs_general is not None:
+                op_kwargs.update(kwargs_general)
             if OPS_kwargs is not None and primitive in OPS_kwargs:
                 op_kwargs.update(OPS_kwargs[primitive])
             if not primitive.startswith('nbeats'):

@@ -68,6 +68,7 @@ def forward_concat_net(flat_net: nn.Module,
                        seq_net: nn.Module,
                        x_past: torch.Tensor,
                        x_future: torch.Tensor,
+                       decompose,
                        forecast_only_flat: bool = True,
                        forecast_only_seq: bool = True,
                        seq_kwargs: dict = {},
@@ -89,18 +90,25 @@ def forward_concat_net(flat_net: nn.Module,
     """
     # x_past contains two values, the first one is from the raw data, the second one is from the decoder architecture
     # HERE we have x past as the first item and backcast_flat_out as the second input
+    n_vars = backcast_flat_out.shape[-1]
+    past_targets = x_past[:,:,:n_vars]
+    seasonal_init, trend_init = decompose(past_targets)
+
     # TODO check the order of the two elements!!!
     x_past = [
-        torch.cat([backcast_flat_out, x_past[:, :, backcast_flat_out.shape[-1]:]], dim=-1),
-        x_past,
-    ]
-    """
-    x_future = [
-        torch.cat([torch.zeros_like(forecast_flat_out), x_future], dim=-1),
-        torch.cat([forecast_flat_out, x_future], dim=-1)
+        torch.cat([trend_init, x_past[:,:,n_vars:]], -1),
+        torch.cat([seasonal_init, x_past[:,:,n_vars:]], -1),
     ]
     #"""
-    x_future = torch.cat([forecast_flat_out, x_future], dim=-1)
+    seasonal_future, trend_future = decompose(forecast_flat_out)
+
+    x_future = [
+        torch.cat([trend_future, x_future], dim=-1),
+        torch.cat([seasonal_future, x_future], dim=-1)
+    ]
+    #"""
+    #x_future = torch.cat([forecast_flat_out, x_future], dim=-1)
+    
     seq_out = seq_net(x_past, x_future, **seq_kwargs)
     if forecast_only_flat:
         flat_out = flat_out[1]
