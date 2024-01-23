@@ -1,5 +1,6 @@
 from typing import Tuple, Any
 
+import numpy as np
 import torch
 from torch import nn
 from torch.nn.utils import weight_norm
@@ -11,8 +12,8 @@ TCN_DEFAULT_KERNEL_SIZE = 7
 
 
 class GRUEncoderModule(nn.Module):
-    def __init__(self, d_model: int, ts_skip_size: int = 1, bias: bool = True,
-                 bidirectional: bool = False, dropout: float = 0.2, **kwargs):
+    def __init__(self, d_model: int, ts_skip_size: int = 1, bias: bool = False,
+                 bidirectional: bool = True, dropout: float = 0.2, **kwargs):
         super(GRUEncoderModule, self).__init__()
         self.norm = nn.LayerNorm(d_model)
         d_input = d_model
@@ -42,13 +43,14 @@ class GRUEncoderModule(nn.Module):
 
         if self.ts_skip_size > 1:
             output = unfold_tensor(output, self.ts_skip_size, size_info)
-            hx = hx[:, :size_info[0],:]
+            hx = hx[:, :size_info[0], :]
 
         return self.dropout(output), hx, self.hx_encoder_layer(hx)
 
 
 class LSTMEncoderModule(nn.Module):
-    def __init__(self, d_model: int, ts_skip_size:int=1, bias: bool = True, bidirectional: bool = False, dropout=0.2,
+    def __init__(self, d_model: int, ts_skip_size: int = 1, bias: bool = True,
+                 bidirectional: bool = False, dropout=0.2,
                  **kwargs):
         super(LSTMEncoderModule, self).__init__()
         self.norm = nn.LayerNorm(d_model)
@@ -78,13 +80,13 @@ class LSTMEncoderModule(nn.Module):
 
         if self.ts_skip_size > 1:
             output = unfold_tensor(output, self.ts_skip_size, size_info)
-            hx = (hx[0][:, :size_info[0],:], hx[1][:, :size_info[0],:])
+            hx = (hx[0][:, :size_info[0], :], hx[1][:, :size_info[0], :])
         return self.dropout(output), *hx
 
 
 class TransformerEncoderModule(nn.Module):
-    def __init__(self, d_model: int, window_size:int, nhead: int = 8, activation='gelu', dropout: float = 0.2,
-                 is_casual_model: bool = False, is_first_layer: bool = False, **kwargs):
+    def __init__(self, d_model: int, window_size: int, nhead: int = 8, activation='gelu', dropout: float = 0.2,
+                 is_casual_model: bool = False, is_first_layer: bool = False, ts_skip_size: int = 1, **kwargs):
         super(TransformerEncoderModule, self).__init__()
         self.cell = nn.TransformerEncoderLayer(d_model, nhead=nhead, dim_feedforward=4 * d_model, batch_first=True,
                                                dropout=dropout,
@@ -92,6 +94,7 @@ class TransformerEncoderModule(nn.Module):
         self.is_casual_model: bool = is_casual_model
         self.hx_encoder_layer = nn.Linear(d_model, d_model)
         self.is_first_layer = is_first_layer
+        self.ts_skip_size = ts_skip_size
         if self.is_first_layer:
             W_pos = torch.empty((window_size, d_model))
             # https://github.com/yuqinie98/PatchTST/blob/main/PatchTST_supervised/layers/PatchTST_layers.py#L96
@@ -100,15 +103,20 @@ class TransformerEncoderModule(nn.Module):
             self.ps_encoding = nn.Parameter(W_pos, requires_grad=True)
 
     def forward(self, x_past: torch.Tensor, hx: Any | None = None):
+        if self.is_first_layer:
+            # x_past = self.ps_encoding(x_past)
+            x_past = self.dropout(self.ps_encoding + x_past)
+        if self.ts_skip_size > 1:
+            x_past, size_info = fold_tensor(x_past, self.ts_skip_size)
+
         if self.is_casual_model:
             mask = nn.Transformer.generate_square_subsequent_mask(x_past.shape[1], device=x_past.device)
         else:
             mask = None
-        if self.is_first_layer:
-            #x_past = self.ps_encoding(x_past)
-            x_past = self.dropout(self.ps_encoding + x_past)
         output = self.cell(x_past, src_mask=mask)
         # Hidden States
+        if self.ts_skip_size > 1:
+            output = unfold_tensor(output, self.ts_skip_size, size_info)
         hidden_states = output[:, [-1]].transpose(0, 1)
         return output, hidden_states, self.hx_encoder_layer(hidden_states)
 
@@ -117,7 +125,7 @@ class TCNEncoderModule(nn.Module):
     def __init__(self, d_model: int, kernel_size: int = TCN_DEFAULT_KERNEL_SIZE, stride: int = 1, dilation: int = 1,
                  dropout: float = 0.2, **kwargs):
         super(TCNEncoderModule, self).__init__()
-        #dilation = ts_skip_size
+        # dilation = ts_skip_size
         padding = (kernel_size - 1) * dilation
         self.conv1 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,
                                            stride=stride, padding=padding, dilation=dilation))
@@ -159,10 +167,12 @@ class MLPMixEncoderModule(nn.Module):
     # https://arxiv.org/pdf/2303.06053.pdf
     # https://github.com/google-research/google-research/blob/master/tsmixer/tsmixer_basic/models/tsmixer.py
     def __init__(self, d_model: int, window_size: int, dropout: float = 0.2,
-                 forecasting_horizon: int = 0, d_ff: int | None = None, **kwargs):
+                 forecasting_horizon: int = 0, d_ff: int | None = None, ts_skip_size: int = 1, **kwargs):
         super(MLPMixEncoderModule, self).__init__()
+        self.ts_skip_size = ts_skip_size
+        series_len = int(np.ceil(window_size / ts_skip_size))
         self.time_mixer = nn.Sequential(
-            nn.Linear(window_size, window_size),
+            nn.Linear(series_len, series_len),
             nn.ReLU(),
             nn.Dropout(dropout)
         )
@@ -183,11 +193,15 @@ class MLPMixEncoderModule(nn.Module):
         self.hx_encoder_layer = nn.Linear(d_model, d_model)
 
     def forward(self, x_past: torch.Tensor, hx: Any | None = None):
+        x_past, size_info = fold_tensor(x_past, self.ts_skip_size)
         input_t = self.time_norm(x_past.transpose(1, 2).contiguous())
         out_t = self.time_mixer(input_t)
 
         input_f = out_t.transpose(1, 2).contiguous()
+
         input_f += input_f + x_past
+
+        input_f = unfold_tensor(input_f, self.ts_skip_size, size_info)
 
         input_f = self.feature_norm(input_f)
         out_f = self.feature_mixer(input_f)

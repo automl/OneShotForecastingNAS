@@ -70,13 +70,14 @@ class AbstractSearchEncoderCell(nn.Module):
 
                 is_first_layer = cell_idx == 0 and i == n_input_nodes
 
-                ts_skip_size = int(2 ** max((j - self.n_input_nodes + 1 + cell_idx * n_input_nodes), 0))
-
+                dilation = int(2 ** max((j - self.n_input_nodes + cell_idx), 0))
                 node_str = f"{i}<-{j}"
                 ops_kwargs_general = dict(ts_skip_size=1,
+                                          dilation=dilation,
                                           window_size=window_size,
                                           forecasting_horizon=forecasting_horizon,
                                           is_first_layer=is_first_layer)
+
                 op = self.op_types(self.d_model,
                                    PRIMITIVES=PRIMITIVES,
                                    kwargs_general=ops_kwargs_general,
@@ -567,7 +568,7 @@ class SampledEncoderCell(nn.Module):
         assert len(d_inputs) == n_input_nodes
         self.preprocessing = nn.ModuleList(
             [
-                nn.Identity() if d_input == d_model else EmbeddingLayer(d_input, d_model) for d_input in d_inputs
+                nn.Identity() if d_input == d_model else EmbeddingLayer(d_input, d_model, dilation=2**cell_idx) for d_input in d_inputs
             ]
         )
 
@@ -580,7 +581,7 @@ class SampledEncoderCell(nn.Module):
 
                     is_first_layer = cell_idx == 0 and i == n_input_nodes
 
-                    dilation = int(2 ** max((j - self.n_input_nodes + 1 + cell_idx * n_input_nodes), 0))
+                    dilation = int(2 ** max((j - self.n_input_nodes + cell_idx), 0))
                     ops_kwargs_general = dict(ts_skip_size=1,
                                               dilation=dilation,
                                               window_size=window_size,
@@ -594,6 +595,22 @@ class SampledEncoderCell(nn.Module):
                     op = self.all_ops[op_name](self.d_model, **op_kwargs)
                     self.edges[node_str] = op
                 k += 1
+
+        removed_nodes = set()
+        for i in reversed(range(n_input_nodes, self.max_nodes)):
+            if i in removed_nodes:
+                # if the node is removed from the edges, we do not need to check it again
+                continue
+            for j in reversed(range(i)):
+                node_str = f"{i}<-{j}"
+                if node_str in self.edges:
+                    break
+                # in this case, the edge is not the part of the graph
+                removed_nodes.add(j)
+                for k in range(j):
+                    node_str_to_remove = f'{j}<-{k}'
+                    if node_str_to_remove in self.edges:
+                        self.edges.pop(node_str_to_remove)
         self.edge_keys = sorted(list(self.edges.keys()))
         self.edge2index = {key: i for i, key in enumerate(self.edge_keys)}
         self.num_edges = len(self.edges)
@@ -630,7 +647,6 @@ class SampledEncoderCell(nn.Module):
                 if node_str in self.edges:
                     s_curs.append(self.get_edge_out(node_str=node_str, x=states[j], **kwargs))
             states.append(self.aggregate_edges_outputs(s_curs))
-
 
         return self.process_output(states)
 
@@ -724,6 +740,22 @@ class SampledFlatEncoderCell(SampledEncoderCell):
                                                forecasting_horizon=self.forecasting_horizon, **op_kwargs)
                     self.edges[node_str] = op
                 k += 1
+
+        removed_nodes = set()
+        for i in reversed(range(n_input_nodes, self.max_nodes)):
+            if i in removed_nodes:
+                # if the node is removed from the edges, we do not need to check it again
+                continue
+            for j in reversed(range(i)):
+                node_str = f"{i}<-{j}"
+                if node_str in self.edges:
+                    break
+                # in this case, the edge is not the part of the graph
+                removed_nodes.add(j)
+                for k in range(j):
+                    node_str_to_remove = f'{j}<-{k}'
+                    if node_str_to_remove in self.edges:
+                        self.edges.pop(node_str_to_remove)
 
         self.edge_keys = sorted(list(self.edges.keys()))
         self.edge2index = {key: i for i, key in enumerate(self.edge_keys)}

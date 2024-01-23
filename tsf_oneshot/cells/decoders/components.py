@@ -1,5 +1,6 @@
 import abc
 from typing import Tuple, Any
+import numpy as np
 
 from autoPyTorch.pipeline.components.setup.network_backbone.forecasting_backbone.components_util import (
     PositionalEncoding
@@ -74,11 +75,12 @@ class LSTMDecoderModule(ForecastingDecoderLayer):
 
 class TransformerDecoderModule(ForecastingDecoderLayer):
     def __init__(self, d_model: int, forecasting_horizon: int,
-                 nhead: int = 8, activation='gelu', dropout:float=0.2, is_first_layer: bool = False, **kwargs):
+                 nhead: int = 8, activation='gelu', dropout:float=0.2, is_first_layer: bool = False, ts_skip_size:int=1, **kwargs):
         super(TransformerDecoderModule, self).__init__()
         self.cell = nn.TransformerDecoderLayer(d_model, nhead=nhead, dim_feedforward=4 * d_model,dropout=dropout, batch_first=True, activation=activation)
         self.is_first_layer = is_first_layer
         # we apply posititional encoding to all decoder inputs
+        self.ts_skip_size = ts_skip_size
         if self.is_first_layer:
             self.ps_encoding = PositionalEncoding(d_model=d_model)
             W_pos = torch.empty((forecasting_horizon, d_model))
@@ -93,7 +95,13 @@ class TransformerDecoderModule(ForecastingDecoderLayer):
         mask = nn.Transformer.generate_square_subsequent_mask(x_future.shape[1], device=x_future.device)
         if self.is_first_layer:
             x_future = self.dropout(self.ps_encoding + x_future)
+        if self.ts_skip_size > 1:
+            x_future, size_future = fold_tensor(x_future, skip_size=self.ts_skip_size)
+            encoder_output_net, size_past = fold_tensor(encoder_output_net)
         output = self.cell(x_future, memory=encoder_output_net, tgt_mask=mask)
+
+        if self.ts_skip_size > 1:
+            output = unfold_tensor(output, self.ts_skip_size, size_future)
 
         return output
 
@@ -150,13 +158,18 @@ class MLPMixDecoderModule(ForecastingDecoderLayer):
                  window_size: int,
                  forecasting_horizon: int,
                  dropout: float=0.2,
+                 ts_skip_size:int=1,
                  d_ff: int | None = None, **kwargs):
         super(MLPMixDecoderModule, self).__init__()
         if d_ff is None:
             d_ff = 2 * d_model
         self.forecasting_horizon = forecasting_horizon
+        self.ts_skip_size = ts_skip_size
+
+        n_past = int(np.ceil(window_size / self.ts_skip_size))  + int(np.ceil(forecasting_horizon / self.ts_skip_size))
+        n_future = int(np.ceil((forecasting_horizon) / self.ts_skip_size))
         self.time_mixer = nn.Sequential(
-            nn.Linear(window_size + forecasting_horizon, forecasting_horizon),
+            nn.Linear(n_past, n_future),
             nn.ReLU(),
             nn.Dropout(dropout)
         )
@@ -176,6 +189,10 @@ class MLPMixDecoderModule(ForecastingDecoderLayer):
 
     def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
                 hx1: torch.Tensor, hx2: torch.Tensor):
+        if self.ts_skip_size > 1:
+            encoder_output_net, size_past = fold_tensor(encoder_output_net, self.ts_skip_size)
+            x_future, size_future = fold_tensor(x_future, self.ts_skip_size)
+
         input_t = torch.cat(
             [encoder_output_net, x_future], dim=1
         ).transpose(1, 2).contiguous()
@@ -184,9 +201,12 @@ class MLPMixDecoderModule(ForecastingDecoderLayer):
 
         out_t = self.time_mixer(out_t)
 
-        out_t = out_t + input_t[:, :,-self.forecasting_horizon:]
+        out_t = out_t + input_t[:, :,-x_future.shape[1]:]
 
         input_f = out_t.transpose(1, 2).contiguous()
+
+        if self.ts_skip_size > 1:
+            input_f = unfold_tensor(input_f, self.ts_skip_size, size_future)
 
         input_f = self.feature_norm(input_f)
         out_f = self.feature_mixer(input_f)
