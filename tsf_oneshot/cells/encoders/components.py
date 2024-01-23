@@ -5,7 +5,7 @@ from torch import nn
 from torch.nn.utils import weight_norm
 
 from tsf_oneshot.cells.encoders.flat_components import TSMLPBatchNormLayer
-
+from tsf_oneshot.cells.utils import fold_tensor, unfold_tensor, _Chomp1d
 
 TCN_DEFAULT_KERNEL_SIZE = 7
 
@@ -31,11 +31,7 @@ class GRUEncoderModule(nn.Module):
 
     def forward(self, x_past: torch.Tensor, hx: Tuple[torch.Tensor] | None = None):
         if self.ts_skip_size > 1:
-            B, L, N = x_past.shape
-            L_add = L % self.ts_skip_size
-            if L_add != 0:
-                x_past = nn.functional.pad(x_past, (0, 0, 0, self.ts_skip_size - L_add), 'constant', 0)
-            x_past = x_past.view(B, -1, self.ts_skip_size, N).transpose(2, 1).reshape(B * self.ts_skip_size, -1, N)
+            x_past, size_info = fold_tensor(x_past, self.ts_skip_size)
 
         output, hx = self.cell(x_past, hx)
 
@@ -45,8 +41,8 @@ class GRUEncoderModule(nn.Module):
             hx = torch.cat([hx[:1, :, :], torch.flip(hx[1:, :, :], dims=(1,))], -1)
 
         if self.ts_skip_size > 1:
-            output = output.view(B, self.ts_skip_size, -1, N).transpose(2, 1).reshape(B, -1, N)[:,:L,:]
-            hx = hx[:, :B,:]
+            output = unfold_tensor(output, self.ts_skip_size, size_info)
+            hx = hx[:, :size_info[0],:]
 
         return self.dropout(output), hx, self.hx_encoder_layer(hx)
 
@@ -70,11 +66,7 @@ class LSTMEncoderModule(nn.Module):
 
     def forward(self, x_past: torch.Tensor, hx: Tuple[torch.Tensor] | None = None):
         if self.ts_skip_size > 1:
-            B, L, N = x_past.shape
-            L_add = L % self.ts_skip_size
-            if L_add != 0:
-                x_past = nn.functional.pad(x_past, (0, 0, 0, self.ts_skip_size - L_add), 'constant', 0)
-            x_past = x_past.view(B, -1, self.ts_skip_size, N).transpose(2, 1).reshape(B * self.ts_skip_size, -1, N)
+            x_past, size_info = fold_tensor(x_past, self.ts_skip_size)
 
         output, hx = self.cell(x_past, hx)
         if self.bidirectional:
@@ -85,8 +77,8 @@ class LSTMEncoderModule(nn.Module):
             )
 
         if self.ts_skip_size > 1:
-            output = output.view(B, self.ts_skip_size, -1, N).transpose(2, 1).reshape(B, -1, N)[:,:L,:]
-            hx = (hx[0][:, :B,:], hx[1][:, :B,:])
+            output = unfold_tensor(output, self.ts_skip_size, size_info)
+            hx = (hx[0][:, :size_info[0],:], hx[1][:, :size_info[0],:])
         return self.dropout(output), *hx
 
 
@@ -119,18 +111,6 @@ class TransformerEncoderModule(nn.Module):
         # Hidden States
         hidden_states = output[:, [-1]].transpose(0, 1)
         return output, hidden_states, self.hx_encoder_layer(hidden_states)
-
-
-# _Chomp1d, _TemporalBlock and _TemporalConvNet original implemented by
-# https://github.com/locuslab/TCN/blob/master/TCN/tcn.py, Carnegie Mellon University Locus Labs
-# Paper: https://arxiv.org/pdf/1803.01271.pdf
-class _Chomp1d(nn.Module):
-    def __init__(self, chomp_size: int):
-        super(_Chomp1d, self).__init__()
-        self.chomp_size = chomp_size
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x[:, :, :-self.chomp_size].contiguous()
 
 
 class TCNEncoderModule(nn.Module):

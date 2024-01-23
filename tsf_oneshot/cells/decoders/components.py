@@ -9,7 +9,7 @@ from torch import nn
 from torch.nn.utils import weight_norm
 
 from tsf_oneshot.cells.encoders.components import _Chomp1d, TCN_DEFAULT_KERNEL_SIZE, TSMLPBatchNormLayer
-
+from tsf_oneshot.cells.utils import fold_tensor, unfold_tensor
 
 class ForecastingDecoderLayer(nn.Module):
     @abc.abstractmethod
@@ -39,17 +39,13 @@ class GRUDecoderModule(ForecastingDecoderLayer):
     def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
                 hx1: torch.Tensor, hx2: torch.Tensor):
         if self.ts_skip_size > 1:
-            B, L, N = x_future.shape
-            L_add = L % self.ts_skip_size
-            if L_add != 0:
-                x_future = nn.functional.pad(x_future, (0, 0, 0, self.ts_skip_size - L_add), 'constant', 0)
-            x_future = x_future.view(B, -1, self.ts_skip_size, N).transpose(2, 1).reshape(B * self.ts_skip_size, -1, N)
+            x_future, size_info = fold_tensor(x_future, self.ts_skip_size)
             hx1 = hx1.repeat(1, self.ts_skip_size, 1)
 
         output, _ = self.cell(x_future, hx1)
         
         if self.ts_skip_size > 1:
-            output = output.view(B, self.ts_skip_size, -1, N).transpose(2, 1).reshape(B, -1, N)[:,:L,:]
+            output = unfold_tensor(output, self.ts_skip_size, size_info)
             
         return self.dropout(output)
 
@@ -66,17 +62,13 @@ class LSTMDecoderModule(ForecastingDecoderLayer):
     def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
                 hx1: torch.Tensor, hx2: torch.Tensor):
         if self.ts_skip_size > 1:
-            B, L, N = x_future.shape
-            L_add = L % self.ts_skip_size
-            if L_add != 0:
-                x_future = nn.functional.pad(x_future, (0, 0, 0, self.ts_skip_size - L_add), 'constant', 0)
-            x_future = x_future.view(B, -1, self.ts_skip_size, N).transpose(2, 1).reshape(B * self.ts_skip_size, -1, N)
+            x_future, size_info = fold_tensor(x_future, self.ts_skip_size)
             hx1 = hx1.repeat(1, self.ts_skip_size, 1)
             hx2 = hx2.repeat(1, self.ts_skip_size, 1)
         output, _ = self.cell(x_future, (hx1, hx2))
 
         if self.ts_skip_size > 1:
-            output = output.view(B, self.ts_skip_size, -1, N).transpose(2, 1).reshape(B, -1, N)[:,:L,:]
+            output = unfold_tensor(output, self.ts_skip_size, size_info)
         return self.dropout(output)
 
 

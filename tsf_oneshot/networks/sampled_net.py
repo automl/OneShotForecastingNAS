@@ -214,6 +214,8 @@ class SampledNet(nn.Module):
                               d_model=d_model,
                               n_cells=n_cells,
                               n_nodes=n_nodes,
+                              window_size=window_size,
+                              forecasting_horizon=forecasting_horizon,
                               n_cell_input_nodes=n_cell_input_nodes,
                               PRIMITIVES=PRIMITIVES_decoder,
                               operations=operations_decoder,
