@@ -433,7 +433,7 @@ class SampledFlatNet(SampledNet):
         embedding_t = torch.cat([past_targets_t, future_targets], dim=-1)
 
         states = [embedding_t, embedding_s]
-        #"""
+        """
         past_targets = torch.transpose(x_past_, -1, -2)
         future_targets = torch.zeros([*past_targets.shape[:-1], self.forecasting_horizon], device=past_targets.device,
                                      dtype=past_targets.dtype)

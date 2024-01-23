@@ -375,7 +375,7 @@ class SearchDARTSFlatEncoder(AbstractFlatEncoder):
 
         x = x[:, :, :self.d_output]
 
-        """
+        #"""
         # This result in a feature map of size [B, N, L, 1]
         past_targets = torch.transpose(x, -1, -2)
 
