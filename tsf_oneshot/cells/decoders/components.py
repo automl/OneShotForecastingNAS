@@ -92,12 +92,12 @@ class TransformerDecoderModule(ForecastingDecoderLayer):
 
     def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
                 hx1: torch.Tensor, hx2: torch.Tensor):
-        mask = nn.Transformer.generate_square_subsequent_mask(x_future.shape[1], device=x_future.device)
         if self.is_first_layer:
             x_future = self.dropout(self.ps_encoding + x_future)
         if self.ts_skip_size > 1:
             x_future, size_future = fold_tensor(x_future, skip_size=self.ts_skip_size)
-            encoder_output_net, size_past = fold_tensor(encoder_output_net)
+            encoder_output_net, size_past = fold_tensor(encoder_output_net, self.ts_skip_size)
+        mask = nn.Transformer.generate_square_subsequent_mask(x_future.shape[1], device=x_future.device)
         output = self.cell(x_future, memory=encoder_output_net, tgt_mask=mask)
 
         if self.ts_skip_size > 1:
