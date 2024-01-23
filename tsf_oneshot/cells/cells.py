@@ -568,7 +568,7 @@ class SampledEncoderCell(nn.Module):
         assert len(d_inputs) == n_input_nodes
         self.preprocessing = nn.ModuleList(
             [
-                nn.Identity() if d_input == d_model else EmbeddingLayer(d_input, d_model, dilation=2**cell_idx) for d_input in d_inputs
+                nn.Identity() if d_input == d_model else EmbeddingLayer(d_input, d_model) for d_input in d_inputs
             ]
         )
 
