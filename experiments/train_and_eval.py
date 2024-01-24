@@ -24,10 +24,11 @@ from tsf_oneshot.networks.network_controller import (
     ForecastingGDASMixedConcatNetController,
 )
 from tsf_oneshot.cells.encoders.components import TCN_DEFAULT_KERNEL_SIZE
+from autoPyTorch.datasets.time_series_dataset import get_lags_for_frequency
 
 from tsf_oneshot.training.trainer import ForecastingTrainer, ForecastingDARTSSecondOrderTrainer
 from tsf_oneshot.training.utils import get_optimizer, get_lr_scheduler
-
+from tsf_oneshot.cells.operations_setting import ops_setting
 
 
 def seed_everything(seed: int):
@@ -98,11 +99,16 @@ def main(cfg: omegaconf.DictConfig):
     if dataset_name.split('_')[0] in get_LTSF_dataset.SMALL_DATASET:
         # Smaller dataset needs smaller number of dimensions to avoids overfitting
         d_model_fraction = 4
+        op_kwargs = ops_setting['small_dataset']
     else:
         d_model_fraction = 1
+        op_kwargs = ops_setting['other_dataset']
+    op_kwargs['seq_model']['general'] =op_kwargs['general']
+    op_kwargs['flat_model']['general'] = op_kwargs['general']
+
 
     dataset = get_forecasting_dataset(dataset_name=dataset_name, **data_info)
-    dataset.lagged_value = [0] # + get_lags_for_frequency(dataset.freq, num_default_lags=1)
+    dataset.lagged_value = [0]  #+ get_lags_for_frequency(dataset.freq, num_default_lags=1)
 
     val_share: float = cfg.val_share
     """
@@ -255,20 +261,24 @@ def main(cfg: omegaconf.DictConfig):
         if model_type == 'mixed_concat':
             d_input_future = d_input_past
         cfg_model = omegaconf.OmegaConf.to_container(cfg.model, resolve=True)
-        ops_kwargs_seq = cfg_model['seq_model'].get('model_kwargs', {})
 
-        ops_kwargs_seq['mlp_mix'] = {
-                    'forecasting_horizon': n_prediction_steps,
-                    'window_size': window_size,
-                }
-        ops_kwargs_seq['transformer'] = {
-            'forecasting_horizon': n_prediction_steps,
-            'window_size': window_size,
-        }
+        ops_kwargs_seq = op_kwargs['seq_model']
+        ops_kwargs_seq.update(cfg_model['seq_model'].get('model_kwargs', {}))
+
+        #ops_kwargs_seq['mlp_mix'] = {
+        #            'forecasting_horizon': n_prediction_steps,
+        #            'window_size': window_size,
+        #        }
+        #ops_kwargs_seq['transformer'] = {
+        #    'forecasting_horizon': n_prediction_steps,
+        #    'window_size': window_size,
+        #}
         heads_kwargs_seq = cfg_model['flat_model'].get('head_kwargs', {})
 
-        ops_kwargs_flat = cfg_model['flat_model'].get('model_kwargs', {})
+        ops_kwargs_flat = op_kwargs['flat_model']
+        ops_kwargs_flat.update(cfg_model['flat_model'].get('model_kwargs', {}))
         heads_kwargs_flat = cfg_model['flat_model'].get('head_kwargs', {})
+
 
         net_init_kwargs = {
             'd_input_past': d_input_past,

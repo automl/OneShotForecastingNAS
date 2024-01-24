@@ -77,7 +77,9 @@ class AbstractSearchEncoderCell(nn.Module):
                                           dilation=dilation,
                                           window_size=window_size,
                                           forecasting_horizon=forecasting_horizon,
-                                          is_first_layer=is_first_layer)
+                                          is_first_layer=is_first_layer,
+                                          **OPS_kwargs_.get('general', {})
+                                          )
 
                 op = self.op_types(self.d_model,
                                    PRIMITIVES=PRIMITIVES,
@@ -588,7 +590,9 @@ class SampledEncoderCell(nn.Module):
                                               dilation=dilation,
                                               window_size=window_size,
                                               forecasting_horizon=forecasting_horizon,
-                                              is_first_layer=is_first_layer)
+                                              is_first_layer=is_first_layer,
+                                              **OPS_kwargs_.get('general', {})
+                                              )
 
                     node_str = f"{i}<-{j}"
                     op_name = PRIMITIVES[operations[k]]
@@ -749,7 +753,6 @@ class SampledFlatEncoderCell(SampledEncoderCell):
                                                forecasting_horizon=self.forecasting_horizon, **op_kwargs)
                     self.edges[node_str] = op
                 k += 1
-
 
         removed_nodes = set()
         preserved_nodes = set()
