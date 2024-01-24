@@ -481,6 +481,7 @@ class SearchDARTSFlatEncoderCell(SearchDARTSEncoderCell):
         self.num_edges = len(self.edges)
 
     def aggregate_edges_outputs(self, s_curs: list[torch.Tensor]):
+        return sum(s_curs)
         if len(s_curs) > 0:
             return sum(s_curs) / len(s_curs)
         return 0
