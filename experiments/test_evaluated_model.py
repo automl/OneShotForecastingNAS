@@ -346,8 +346,8 @@ def main(cfg: omegaconf.DictConfig):
     early_stopping = EarlyStopping(100)
 
     epoch_start = 0
-    if (out_path / 'SampledNet' / 'Model').exists():
-        epoch_start = trainer.load(out_path, model=model, w_optimizer=w_optimizer, lr_scheduler_w=lr_scheduler)
+    #if (out_path / 'SampledNet' / 'Model').exists():
+    #    epoch_start = trainer.load(out_path, model=model, w_optimizer=w_optimizer, lr_scheduler_w=lr_scheduler)
     for epoch in range(epoch_start, cfg.train.n_epochs):
         val_res, test_res = trainer.train_epoch(epoch)
         trainer.save(out_path, epoch=epoch)
