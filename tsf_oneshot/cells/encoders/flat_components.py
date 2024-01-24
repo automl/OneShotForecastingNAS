@@ -115,7 +115,7 @@ class NBEATSModule(nn.Module):
                  window_size: int,
                  forecasting_horizon: int,
                  dropout: float = 0.2,
-                 width=128, num_fc_layers: int = 2, thetas_dim: int = 128,
+                 width=256, num_fc_layers: int = 2, thetas_dim: int = 128,
                  stack_type: str = 't',
                  is_last_layer: bool = False,
                  has_fc_layers: bool = True,

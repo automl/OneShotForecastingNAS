@@ -71,6 +71,7 @@ class AbstractSearchEncoderCell(nn.Module):
                 is_first_layer = cell_idx == 0 and i == n_input_nodes
 
                 dilation = int(2 ** max((j - self.n_input_nodes + cell_idx), 0))
+                #dilation = int(2 ** cell_idx) if cell_idx % 2 == 0 else 1
                 node_str = f"{i}<-{j}"
                 ops_kwargs_general = dict(ts_skip_size=1,
                                           dilation=dilation,
@@ -748,6 +749,7 @@ class SampledFlatEncoderCell(SampledEncoderCell):
                     self.edges[node_str] = op
                 k += 1
 
+
         removed_nodes = set()
         preserved_nodes = set()
         for i in reversed(range(n_input_nodes, self.max_nodes)):
@@ -780,6 +782,7 @@ class SampledFlatEncoderCell(SampledEncoderCell):
         }
 
     def aggregate_edges_outputs(self, s_curs: list[torch.Tensor]):
+        return sum(s_curs)
         if len(s_curs) > 0:
             return sum(s_curs) / len(s_curs)
         return 0

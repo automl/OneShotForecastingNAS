@@ -32,14 +32,14 @@ def add_outputs(input1: list, input2: list, weights: torch.Tensor | None = None)
             else:
                 assert len(weights) == 2
                 return [add_outputs(ipt, input2, weights) for ipt in input1]
-                #return [*[ipt * weights[0] for ipt in input1[:-1]], input1[-1] * weights[0] + input2 * weights[1]]
+                # return [*[ipt * weights[0] for ipt in input1[:-1]], input1[-1] * weights[0] + input2 * weights[1]]
     elif isinstance(input1, torch.Tensor):
         if isinstance(input2, (list, tuple)):
             if weights is None:
                 return [*input2[:-1], input1 + input2[-1]]
             else:
                 return [add_outputs(input1, ipt, weights) for ipt in input2]
-                #return [*[ipt * weights[1] + input2[-1] * weights[1] for ipt in input2[:-1]], input1 * weights[0] + input2[-1] * weights[1]]
+                # return [*[ipt * weights[1] + input2[-1] * weights[1] for ipt in input2[:-1]], input1 * weights[0] + input2[-1] * weights[1]]
         else:
             if weights is None:
                 return input1 + input2
@@ -91,24 +91,24 @@ def forward_concat_net(flat_net: nn.Module,
     # x_past contains two values, the first one is from the raw data, the second one is from the decoder architecture
     # HERE we have x past as the first item and backcast_flat_out as the second input
     n_vars = backcast_flat_out.shape[-1]
-    past_targets = x_past[:,:,:n_vars]
+    past_targets = x_past[:, :, :n_vars]
     seasonal_init, trend_init = decompose(past_targets)
 
     # TODO check the order of the two elements!!!
     x_past = [
-        torch.cat([trend_init, x_past[:,:,n_vars:]], -1),
-        torch.cat([seasonal_init, x_past[:,:,n_vars:]], -1),
+        torch.cat([trend_init, x_past[:, :, n_vars:]], -1),
+        torch.cat([seasonal_init, x_past[:, :, n_vars:]], -1),
     ]
-    #"""
+    # """
     seasonal_future, trend_future = decompose(forecast_flat_out)
 
     x_future = [
         torch.cat([trend_future, x_future], dim=-1),
         torch.cat([seasonal_future, x_future], dim=-1)
     ]
-    #"""
-    #x_future = torch.cat([forecast_flat_out, x_future], dim=-1)
-    
+    # """
+    # x_future = torch.cat([forecast_flat_out, x_future], dim=-1)
+
     seq_out = seq_net(x_past, x_future, **seq_kwargs)
     if forecast_only_flat:
         flat_out = flat_out[1]
