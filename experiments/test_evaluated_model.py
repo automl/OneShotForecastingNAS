@@ -309,10 +309,10 @@ def main(cfg: omegaconf.DictConfig):
         raise NotImplementedError
     n_pars = 0
 
-    w_optim_groups = model.get_weight_optimizer_parameters(cfg.w_optimizer.weight_decay)
-    w_optimizer = get_optimizer(cfg_optimizer=cfg.w_optimizer, optim_groups=w_optim_groups, wd_in_p_groups=True)
+    w_optim_groups = model.get_weight_optimizer_parameters(cfg.w_optimizer_eval.weight_decay)
+    w_optimizer = get_optimizer(cfg_optimizer=cfg.w_optimizer_eval, optim_groups=w_optim_groups, wd_in_p_groups=True)
 
-    lr_scheduler = get_lr_scheduler(optimizer=w_optimizer, cfg_lr_scheduler=cfg.lr_scheduler,
+    lr_scheduler = get_lr_scheduler(optimizer=w_optimizer, cfg_lr_scheduler=cfg.lr_scheduler_eval,
                                     steps_per_epoch=len(train_data_loader),
                                     )
 
