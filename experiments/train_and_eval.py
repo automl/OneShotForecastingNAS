@@ -159,9 +159,14 @@ def main(cfg: omegaconf.DictConfig):
         split_val_pt = [
             np.arange(border1s[1], border2s[1] - dataset.n_prediction_steps),
         ]
+        split_val_pt1 = np.round(
+            np.linspace(
+                splits_new[1][0], splits_new[1][-1], border2s[1] - dataset.n_prediction_steps - border1s[1], endpoint=True
+            )
+        ).astype(int)
 
-        no_intersect = (splits_new[0] + cfg.benchmark.external_forecast_horizon) < split_val_pt[0][0]
-        splits_new = [splits_new[0][no_intersect], splits_new[1][:sum(no_intersect)]]
+        #no_intersect = (splits_new[0] + cfg.benchmark.external_forecast_horizon) < split_val_pt[0][0]
+        #splits_new = [splits_new[0][no_intersect], splits_new[1][:sum(no_intersect)]]
 
         dataset_val = get_forecasting_dataset(dataset_name=dataset_name, **data_info)
         dataset_val.lagged_value = [0]  # + get_lags_for_frequency(dataset.freq, num_default_lags=1)
