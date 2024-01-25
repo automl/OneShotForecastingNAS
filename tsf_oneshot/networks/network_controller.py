@@ -718,7 +718,7 @@ class ForecastingAbstractMixedNetController(AbstractForecastingNetworkController
 
         w_dag_net = self.get_w_dag(self.arch_p_nets + self.mask_net)
         # for different, architectures, they are not competitors. Therefore, we simply apply sigmoid to these values.
-        # w_dag_net = torch.nn.functional.sigmoid(self.arch_p_nets + self.mask_net)
+        w_dag_net = torch.nn.functional.sigmoid(self.arch_p_nets + self.mask_net)
 
         return dict(
             arch_p_encoder_seq=w_dag_encoder_seq,
