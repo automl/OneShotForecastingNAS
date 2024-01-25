@@ -602,7 +602,6 @@ class SampledEncoderCell(nn.Module):
                     self.edges[node_str] = op
                 k += 1
 
-
         removed_nodes = set()
         preserved_nodes = set()
         for i in reversed(range(n_input_nodes, self.max_nodes)):
@@ -622,11 +621,10 @@ class SampledEncoderCell(nn.Module):
                     removed_nodes.add(j)
                     for k in range(j):
                         node_str_to_remove = f'{j}<-{k}'
-                        if node_str_to_remove == '1<-0':
-                            import pdb
-                            pdb.set_trace()
                         if node_str_to_remove in self.edges:
                             self.edges.pop(node_str_to_remove)
+
+
 
         self.edge_keys = sorted(list(self.edges.keys()))
         self.edge2index = {key: i for i, key in enumerate(self.edge_keys)}
@@ -777,9 +775,6 @@ class SampledFlatEncoderCell(SampledEncoderCell):
                         removed_nodes.add(j)
                         for k in range(j):
                             node_str_to_remove = f'{j}<-{k}'
-                            if node_str_to_remove == '1<-0':
-                                import pdb
-                                pdb.set_trace()
                             if node_str_to_remove in self.edges:
                                 self.edges.pop(node_str_to_remove)
 
