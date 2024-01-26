@@ -497,7 +497,7 @@ class ForecastingTrainer:
                 else:
                     candidate_edges = np.nonzero(self.model.candidate_flag_ops[:-1])[0]
                     if len(candidate_edges) == 0:
-                        break
+                        continue
                     selected_eid = np.random.choice(candidate_edges)
                 selected_eid_raw = selected_eid
                 for n_edge, mask_name in zip(self.model.len_all_arch_p, self.model.all_mask_names):

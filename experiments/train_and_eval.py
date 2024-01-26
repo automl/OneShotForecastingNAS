@@ -159,11 +159,11 @@ def main(cfg: omegaconf.DictConfig):
         split_val_pt = [
             np.arange(border1s[1], border2s[1] - dataset.n_prediction_steps),
         ]
-        split_val_pt1 = np.round(
+        split_val_pt1 = [np.round(
             np.linspace(
                 splits_new[1][0], splits_new[1][-1], border2s[1] - dataset.n_prediction_steps - border1s[1], endpoint=True
             )
-        ).astype(int)
+        ).astype(int)]
 
         #no_intersect = (splits_new[0] + cfg.benchmark.external_forecast_horizon) < split_val_pt[0][0]
         #splits_new = [splits_new[0][no_intersect], splits_new[1][:sum(no_intersect)]]
@@ -418,7 +418,6 @@ def main(cfg: omegaconf.DictConfig):
     if (out_path / 'Model').exists():
         epoch_start = trainer.load(out_path, model=model, w_optimizer=w_optimizer,
                                    a_optimizer=a_optimizer, lr_scheduler_w=lr_scheduler)
-
     start_optimize_alpha = int(cfg.get('start_optimize_alpha', 0))
 
     for epoch in range(epoch_start, n_epochs):
@@ -441,14 +440,18 @@ def main(cfg: omegaconf.DictConfig):
                     trainer.save(out_neg, epoch=epoch)
         else:
             break
+
     trainer.save(out_path / f"without_selection", epoch=epoch)
     if search_type == 'darts':
         proj_path =  out_path / 'pt_project'
         is_success = trainer.pt_project(cfg, proj_path)
         if not is_success:
             for i in range(5):
-                trainer.load(proj_path, model=model, w_optimizer=w_optimizer,
-                                   a_optimizer=a_optimizer, lr_scheduler_w=lr_scheduler)
+                if not proj_path.exists():
+                    epoch_start = trainer.load(out_path, model=model, w_optimizer=w_optimizer,
+                                            a_optimizer=a_optimizer, lr_scheduler_w=lr_scheduler)
+                epoch_start = trainer.load(proj_path, model=model, w_optimizer=w_optimizer,
+                                            a_optimizer=a_optimizer, lr_scheduler_w=lr_scheduler)
                 is_success = trainer.pt_project(cfg, proj_path, reset_optimizer=False)
                 if is_success:
                     break
