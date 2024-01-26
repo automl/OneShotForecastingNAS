@@ -56,9 +56,10 @@ a_optimizer:
   beta2: 0.999
 
 lr_scheduler:
-  type: 'OneCycleLR'
-  max_lr: ${w_optimizer.lr}
-  epochs: ${train.n_epochs}
+  type: 'CosineAnnealingWarmRestarts'
+  T_0: 20
+  T_mult: 1
+  eta_min: 1e-8
 
 start_optimize_alpha: 0
 
