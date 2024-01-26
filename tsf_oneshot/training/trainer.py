@@ -1,5 +1,6 @@
 import copy
 import os
+import pathlib
 from pathlib import Path
 
 import omegaconf
@@ -470,22 +471,23 @@ class ForecastingTrainer:
 
         return trainer_info.get('epoch', 0)
 
-    def pt_project(self, cfg: omegaconf.DictConfig):
-        # original from https://github.com/ruocwang/darts-pt
-        self.lr_scheduler_w = None
-        self.lr_scheduler_a = None
+    def pt_project(self, cfg: omegaconf.DictConfig, proj_path:pathlib.Path, reset_optimizer: bool=True):
+        if reset_optimizer:
+            # original from https://github.com/ruocwang/darts-pt
+            self.lr_scheduler_w = None
+            self.lr_scheduler_a = None
 
-        del self.w_optimizer
-        # reset w_optimizer
-        cfg_w_optimizer = copy.copy(cfg.w_optimizer)
-        cfg_w_optimizer.lr = cfg_w_optimizer.lr / 10
-        self.w_optimizer = get_optimizer(
-            cfg_optimizer=cfg_w_optimizer,
-            optim_groups=self.model.get_weight_optimizer_parameters(cfg_w_optimizer.weight_decay),
-            wd_in_p_groups=True
-        )
+            del self.w_optimizer
+            # reset w_optimizer
+            cfg_w_optimizer = copy.copy(cfg.w_optimizer)
+            cfg_w_optimizer.lr = cfg_w_optimizer.lr / 10
+            self.w_optimizer = get_optimizer(
+                cfg_optimizer=cfg_w_optimizer,
+                optim_groups=self.model.get_weight_optimizer_parameters(cfg_w_optimizer.weight_decay),
+                wd_in_p_groups=True
+            )
         num_edges = sum(self.model.candidate_flag_ops)
-        tune_epochs = self.proj_intv * (num_edges - 1)
+        tune_epochs = self.proj_intv * (num_edges - 1) + 1
         # prune the objects
         for epoch in range(tune_epochs):
             if epoch % self.proj_intv == 0 or epoch == tune_epochs - 1:
@@ -494,6 +496,8 @@ class ForecastingTrainer:
                     selected_eid = num_edges - 1
                 else:
                     candidate_edges = np.nonzero(self.model.candidate_flag_ops[:-1])[0]
+                    if len(candidate_edges) == 0:
+                        break
                     selected_eid = np.random.choice(candidate_edges)
                 selected_eid_raw = selected_eid
                 for n_edge, mask_name in zip(self.model.len_all_arch_p, self.model.all_mask_names):
@@ -510,7 +514,7 @@ class ForecastingTrainer:
                             mask[selected_eid] = 0
                             mask[selected_eid, op_id] = -torch.inf
 
-                            loss = self.evaluate(self.val_eval_loader, epoch=op_id, loader_type='proj')['MSE loss']
+                            loss = self.evaluate(self.val_eval_loader, epoch=epoch* 100 + op_id, loader_type='proj')['MSE loss']
                             if loss > loss_best:
                                 loss_best = loss
                                 best_opid = op_id
@@ -521,7 +525,13 @@ class ForecastingTrainer:
                         break
                     else:
                         selected_eid -= n_edge
-            self.train_epoch(epoch)
+            w_loss = self.train_epoch(epoch)
+            os.makedirs(proj_path, exist_ok=True)
+            if not torch.isnan(w_loss):
+                self.save(proj_path, epoch)
+            else:
+                return False
+        return True
 
     def pt_project_topology(self):
         # original from https://github.com/ruocwang/darts-pt

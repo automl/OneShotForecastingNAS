@@ -443,7 +443,18 @@ def main(cfg: omegaconf.DictConfig):
             break
     trainer.save(out_path / f"without_selection", epoch=epoch)
     if search_type == 'darts':
-        trainer.pt_project(cfg)
+        proj_path =  out_path / 'pt_project'
+        is_success = trainer.pt_project(cfg, proj_path)
+        if not is_success:
+            for i in range(5):
+                trainer.load(proj_path, model=model, w_optimizer=w_optimizer,
+                                   a_optimizer=a_optimizer, lr_scheduler_w=lr_scheduler)
+                is_success = trainer.pt_project(cfg, proj_path, reset_optimizer=False)
+                if is_success:
+                    break
+            if not is_success:
+                raise ValueError('PT Project fails!')
+
         trainer.save(out_path, epoch=n_epochs - 1)
         trainer.save(out_path / f"after_op_selection", epoch=epoch)
         trainer.pt_project_topology()
