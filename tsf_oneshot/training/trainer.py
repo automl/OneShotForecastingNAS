@@ -402,7 +402,6 @@ class ForecastingTrainer:
             for shift in range(self.sample_interval):
                 x_past_test = x_past_test_[:, self.data_indices + shift]
                 x_future_test = x_future_test_[:, self.target_indices + shift]
-
                 with torch.no_grad():
                     prediction_test, w_dag_test = self.model(x_past_test, x_future_test, return_w_head=True)
                     if not self.forecast_only:
@@ -515,6 +514,9 @@ class ForecastingTrainer:
                             mask[selected_eid, op_id] = -torch.inf
 
                             loss = self.evaluate(self.val_eval_loader, epoch=epoch* 100 + op_id, loader_type='proj')['MSE loss']
+                            if torch.isnan(loss):
+                                return False
+
                             if loss > loss_best:
                                 loss_best = loss
                                 best_opid = op_id
