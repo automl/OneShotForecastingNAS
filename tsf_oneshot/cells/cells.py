@@ -602,28 +602,6 @@ class SampledEncoderCell(nn.Module):
                     self.edges[node_str] = op
                 k += 1
 
-        removed_nodes = set()
-        preserved_nodes = set()
-        for i in reversed(range(n_input_nodes, self.max_nodes)):
-            if i in removed_nodes:
-                # if the node is removed from the edges, we do not need to check it again
-                continue
-            for j in reversed(range(i)):
-                node_str = f"{i}<-{j}"
-                if node_str in self.edges:
-                    for j1 in range(j):
-                        node_str_reseved = f"{i}<-{j1}"
-                        if node_str_reseved in self.edges:
-                            preserved_nodes.add(j1)
-                    break
-                if j not in preserved_nodes:
-                    # in this case, the edge is not the part of the graph
-                    removed_nodes.add(j)
-                    for k in range(j):
-                        node_str_to_remove = f'{j}<-{k}'
-                        if node_str_to_remove in self.edges:
-                            self.edges.pop(node_str_to_remove)
-
         self.edge_keys = sorted(list(self.edges.keys()))
         self.edge2index = {key: i for i, key in enumerate(self.edge_keys)}
         self.num_edges = len(self.edges)
@@ -754,27 +732,6 @@ class SampledFlatEncoderCell(SampledEncoderCell):
                     self.edges[node_str] = op
                 k += 1
 
-        removed_nodes = set()
-        preserved_nodes = set()
-        for i in reversed(range(n_input_nodes, self.max_nodes)):
-            if i in removed_nodes:
-                # if the node is removed from the edges, we do not need to check it again
-                continue
-            for j in reversed(range(i)):
-                node_str = f"{i}<-{j}"
-                if node_str in self.edges:
-                    for j1 in range(j):
-                        node_str_reseved = f"{i}<-{j1}"
-                        if node_str_reseved in self.edges:
-                            preserved_nodes.add(j1)
-                    break
-                if j not in preserved_nodes:
-                    # in this case, the edge is not the part of the graph
-                        removed_nodes.add(j)
-                        for k in range(j):
-                            node_str_to_remove = f'{j}<-{k}'
-                            if node_str_to_remove in self.edges:
-                                self.edges.pop(node_str_to_remove)
 
         self.edge_keys = sorted(list(self.edges.keys()))
         self.edge2index = {key: i for i, key in enumerate(self.edge_keys)}
