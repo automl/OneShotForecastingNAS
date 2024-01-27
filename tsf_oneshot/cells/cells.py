@@ -6,6 +6,7 @@ import torch
 from torch import nn
 
 from tsf_oneshot.cells.encoders import PRIMITIVES_Encoder, PRIMITIVES_FLAT_ENCODER
+from tsf_oneshot.cells.encoders import MLPFlatModule, IdentityFlatEncoderModule
 from tsf_oneshot.cells.decoders import PRIMITIVES_Decoder
 from tsf_oneshot.cells.ops import MixedEncoderOps, MixedDecoderOps, MixedFlatEncoderOps
 from tsf_oneshot.cells.utils import EmbeddingLayer
@@ -732,6 +733,19 @@ class SampledFlatEncoderCell(SampledEncoderCell):
                     self.edges[node_str] = op
                 k += 1
 
+        # if the final outputs are identity layers,
+        # we need to make sure that the output layer is not incorrectly normalized
+        def set_linea_layer_as_output(node_id:int):
+            for j in range(node_id):
+                node_str = f"{node_id}<-{j}"
+                if node_str in self.edges:
+                    if isinstance(self.edges[node_str], IdentityFlatEncoderModule):
+                        # we go deeper into the next layer
+                        set_linea_layer_as_output(j)
+                    if isinstance(self.edges[node_str], MLPFlatModule):
+                        self.edges[node_str].become_last_layer()
+        if is_last_cell:
+            set_linea_layer_as_output(self.max_nodes - 1)
 
         self.edge_keys = sorted(list(self.edges.keys()))
         self.edge2index = {key: i for i, key in enumerate(self.edge_keys)}

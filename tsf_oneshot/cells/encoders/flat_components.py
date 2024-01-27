@@ -109,6 +109,9 @@ class MLPFlatModule(nn.Module):
         # here x_past should be the concatenation of x_past + x_future
         return torch.cat([x_past[:, :, :self.window_size], self.net(x_past)], -1)
 
+    def become_last_layer(self):
+        self.net = nn.Linear(self.window_size + self.forecasting_horizon, self.forecasting_horizon)
+
 
 class NBEATSModule(nn.Module):
     def __init__(self,
