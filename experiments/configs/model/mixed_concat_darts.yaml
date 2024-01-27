@@ -16,7 +16,7 @@ seq_model:
   DECODERS: ['seq', 'linear']
 
 flat_model:
-  n_cells: 1
+  n_cells: 2
   n_nodes: 4
   n_cell_input_nodes: 1
   backcast_loss_ration: 0.0

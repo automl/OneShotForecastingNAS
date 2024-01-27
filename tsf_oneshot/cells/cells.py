@@ -483,7 +483,7 @@ class SearchDARTSFlatEncoderCell(SearchDARTSEncoderCell):
         self.num_edges = len(self.edges)
 
     def aggregate_edges_outputs(self, s_curs: list[torch.Tensor]):
-        return sum(s_curs)
+        #return sum(s_curs)
         if len(s_curs) > 0:
             return sum(s_curs) / len(s_curs)
         return 0
@@ -623,8 +623,6 @@ class SampledEncoderCell(nn.Module):
                         node_str_to_remove = f'{j}<-{k}'
                         if node_str_to_remove in self.edges:
                             self.edges.pop(node_str_to_remove)
-
-
 
         self.edge_keys = sorted(list(self.edges.keys()))
         self.edge2index = {key: i for i, key in enumerate(self.edge_keys)}
@@ -787,7 +785,7 @@ class SampledFlatEncoderCell(SampledEncoderCell):
         }
 
     def aggregate_edges_outputs(self, s_curs: list[torch.Tensor]):
-        return sum(s_curs)
+        #return sum(s_curs)
         if len(s_curs) > 0:
             return sum(s_curs) / len(s_curs)
         return 0

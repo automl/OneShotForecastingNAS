@@ -97,7 +97,7 @@ def main(cfg: omegaconf.DictConfig):
 
     if dataset_name.split('_')[0] in get_LTSF_dataset.SMALL_DATASET:
         # Smaller dataset needs smaller number of dimensions to avoids overfitting
-        d_model_fraction = 4
+        d_model_fraction = 8
         op_kwargs = ops_setting['small_dataset']
     else:
         d_model_fraction = 1
@@ -343,7 +343,7 @@ def main(cfg: omegaconf.DictConfig):
         amp_enable=cfg.train.amp_enable
     )
 
-    early_stopping = EarlyStopping(100)
+    early_stopping = EarlyStopping(25)
 
     epoch_start = 0
     #if (out_path / 'SampledNet' / 'Model').exists():

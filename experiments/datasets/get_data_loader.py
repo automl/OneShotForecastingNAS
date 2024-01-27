@@ -207,6 +207,8 @@ def get_dataloader(dataset: TimeSeriesForecastingDataset,
                 batch_size_ = batch_size_test
             else:
                 batch_size_ = batch_size
+            if batch_size_ > len(sub_dataset):
+                batch_size_ = len(sub_dataset)
             data_loader = torch.utils.data.DataLoader(
                 sub_dataset,
                 batch_size=batch_size_,
