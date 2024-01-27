@@ -514,7 +514,7 @@ class ForecastingTrainer:
                             mask[selected_eid, op_id] = -torch.inf
 
                             loss = self.evaluate(self.val_eval_loader, epoch=epoch* 100 + op_id, loader_type='proj')['MSE loss']
-                            if torch.isnan(loss):
+                            if np.isnan(loss):
                                 return False
 
                             if loss > loss_best:
