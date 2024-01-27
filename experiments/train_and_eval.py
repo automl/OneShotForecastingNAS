@@ -173,7 +173,7 @@ def main(cfg: omegaconf.DictConfig):
 
         # We directly subsample from the preprocessing steps
         val_eval_loader = get_dataloader(
-            dataset=dataset_val, splits=split_val_pt, batch_size=batch_size,
+            dataset=dataset_val, splits=split_val_pt1, batch_size=batch_size,
             num_batches_per_epoch=None,
             is_test_sets=[True],
             window_size=window_size,
