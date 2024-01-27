@@ -176,7 +176,7 @@ class MLPMixEncoderModule(nn.Module):
             nn.ReLU(),
             nn.Dropout(dropout)
         )
-        self.time_norm = nn.BatchNorm1d(d_model)
+        self.time_norm = nn.BatchNorm1d(d_model * window_size)
         # self.time_norm = nn.LayerNorm(window_size)
 
         if d_ff is None:
@@ -189,12 +189,13 @@ class MLPMixEncoderModule(nn.Module):
             nn.Linear(d_ff, d_model),
             nn.Dropout(dropout)
         )
-        self.feature_norm = TSMLPBatchNormLayer(d_model)
+        self.feature_norm =  nn.BatchNorm1d(d_model * window_size)
         self.hx_encoder_layer = nn.Linear(d_model, d_model)
 
     def forward(self, x_past: torch.Tensor, hx: Any | None = None):
         x_past, size_info = fold_tensor(x_past, self.ts_skip_size)
-        input_t = self.time_norm(x_past.transpose(1, 2).contiguous())
+        x_past_shape = x_past.shape
+        input_t = self.time_norm(x_past.flatten(1)).view(x_past_shape).transpose(1,2)
         out_t = self.time_mixer(input_t)
 
         input_f = out_t.transpose(1, 2).contiguous()
@@ -202,8 +203,8 @@ class MLPMixEncoderModule(nn.Module):
         input_f += input_f + x_past
 
         input_f = unfold_tensor(input_f, self.ts_skip_size, size_info)
-
-        input_f = self.feature_norm(input_f)
+        input_f_shape = input_f.shape
+        input_f = self.feature_norm(input_f.flatten(1)).view(input_f_shape)
         out_f = self.feature_mixer(input_f)
 
         out = out_f + input_f

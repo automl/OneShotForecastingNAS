@@ -173,7 +173,7 @@ class MLPMixDecoderModule(ForecastingDecoderLayer):
             nn.ReLU(),
             nn.Dropout(dropout)
         )
-        self.time_norm = nn.BatchNorm1d(d_model)
+        self.time_norm = nn.BatchNorm1d(d_model * n_past)
 
         if d_ff is None:
             d_ff = d_model * 2
@@ -185,7 +185,7 @@ class MLPMixDecoderModule(ForecastingDecoderLayer):
             nn.Linear(d_ff, d_model),
             nn.Dropout(dropout)
         )
-        self.feature_norm = TSMLPBatchNormLayer(d_model)
+        self.feature_norm = nn.BatchNorm1d(d_model * forecasting_horizon)
 
     def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
                 hx1: torch.Tensor, hx2: torch.Tensor):
@@ -195,20 +195,19 @@ class MLPMixDecoderModule(ForecastingDecoderLayer):
 
         input_t = torch.cat(
             [encoder_output_net, x_future], dim=1
-        ).transpose(1, 2).contiguous()
+        )
+        input_t_shape = input_t.shape
 
-        out_t = self.time_norm(input_t)
+        out_t = self.time_norm(input_t.flatten(1)).view(input_t_shape).transpose(1, 2).contiguous()
 
         out_t = self.time_mixer(out_t)
 
-        out_t = out_t + input_t[:, :,-x_future.shape[1]:]
-
-        input_f = out_t.transpose(1, 2).contiguous()
+        input_f = out_t.transpose(1, 2).contiguous() + input_t[:, -x_future.shape[1]:, :]
 
         if self.ts_skip_size > 1:
             input_f = unfold_tensor(input_f, self.ts_skip_size, size_future)
-
-        input_f = self.feature_norm(input_f)
+        input_f_shape = input_f.shape
+        input_f = self.feature_norm(input_f.flatten(1)).view(input_f_shape)
         out_f = self.feature_mixer(input_f)
 
         return out_f + input_f
