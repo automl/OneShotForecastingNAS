@@ -4,7 +4,7 @@ model_type: mixed_concat
 
 grad_order: 1
 seq_model:
-  d_model: 64
+  d_model: 32
   n_cells: 2
   n_nodes: 4
   n_cell_input_nodes: 2

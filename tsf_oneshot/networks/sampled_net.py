@@ -559,7 +559,8 @@ class AbstractMixedSampledNet(SampledNet):
         return kwargs
 
     def transform_nets_weights(self):
-        return torch.nn.functional.softmax(self.nets_weights, -1)
+        res = torch.nn.functional.softmax(self.nets_weights, -1)
+        return res / torch.sum(res)
         #return torch.nn.functional.sigmoid(self.nets_weights)
 
     @staticmethod

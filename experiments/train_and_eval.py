@@ -98,7 +98,7 @@ def main(cfg: omegaconf.DictConfig):
 
     if dataset_name.split('_')[0] in get_LTSF_dataset.SMALL_DATASET:
         # Smaller dataset needs smaller number of dimensions to avoids overfitting
-        d_model_fraction = 8
+        d_model_fraction = 4
         op_kwargs = ops_setting['small_dataset']
     else:
         d_model_fraction = 1
@@ -165,15 +165,15 @@ def main(cfg: omegaconf.DictConfig):
             )
         ).astype(int)]
 
-        #no_intersect = (splits_new[0] + cfg.benchmark.external_forecast_horizon) < split_val_pt[0][0]
-        #splits_new = [splits_new[0][no_intersect], splits_new[1][:sum(no_intersect)]]
+        no_intersect = (splits_new[0] + cfg.benchmark.external_forecast_horizon) < split_val_pt[0][0]
+        splits_new = [splits_new[0][no_intersect], splits_new[1][:sum(no_intersect)]]
 
         dataset_val = get_forecasting_dataset(dataset_name=dataset_name, **data_info)
         dataset_val.lagged_value = [0]  # + get_lags_for_frequency(dataset.freq, num_default_lags=1)
 
         # We directly subsample from the preprocessing steps
         val_eval_loader = get_dataloader(
-            dataset=dataset_val, splits=split_val_pt1, batch_size=batch_size,
+            dataset=dataset_val, splits=split_val_pt, batch_size=batch_size,
             num_batches_per_epoch=None,
             is_test_sets=[True],
             window_size=window_size,
