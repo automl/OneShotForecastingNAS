@@ -450,7 +450,7 @@ class AbstractForecastingFlatNetworkController(AbstractForecastingNetworkControl
         # topology selection phase
 
         self.len_all_nodes = [self.net.n_cell_nodes]
-        self.edges2index, self.candidate_edges = self.get_edge2index()
+        self.edges2index, self.candidate_flag_nodes = self.get_edge2index()
 
     def get_all_wags(self):
         w_dag_encoder = self.get_w_dag(self.arch_p_encoder)
