@@ -217,14 +217,6 @@ def main(cfg: omegaconf.DictConfig):
         }
         cfg_model = omegaconf.OmegaConf.to_container(cfg.model, resolve=True)
         ops_kwargs = cfg_model.get('model_kwargs', {})
-        ops_kwargs['mlp_mix'] = {
-                                    'forecasting_horizon': n_prediction_steps,
-                                    'window_size': window_size,
-                                }
-        ops_kwargs['transformer'] = {
-            'forecasting_horizon': n_prediction_steps,
-            'window_size': window_size,
-        }
         heads_kwargs = cfg_model.get('heads_kwargs', {})
 
         net_init_kwargs.update(

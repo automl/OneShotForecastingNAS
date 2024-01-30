@@ -150,7 +150,7 @@ class AbstractSearchEncoder(nn.Module):
 
     def forward(self, x: torch.Tensor, **kwargs):
         if isinstance(x, torch.Tensor):
-            states = [x for _ in range(self.n_cell_input_nodes)] * self.n_cell_input_nodes
+            states = [x for _ in range(self.n_cell_input_nodes)]
         elif isinstance(x, list):
             # TODO check the cases when len(states) != self.n_cell_input_nodes !!!
             states = x
@@ -330,6 +330,7 @@ class AbstractFlatEncoder(AbstractSearchEncoder):
         self.edge2index = edge2index
 
         self.num_edges = num_edges
+
         self._device = torch.device('cpu')
 
     def save(self, base_path: Path):

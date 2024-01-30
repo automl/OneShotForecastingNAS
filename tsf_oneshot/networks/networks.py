@@ -226,6 +226,7 @@ class ForecastingFlatAbstractNetwork(nn.Module):
                                      PRIMITIVES=HEADs, OPS_kwargs=HEADs_kwargs)
 
         self.n_cell_nodes = n_nodes + n_cell_input_nodes
+        self.n_cell_input_nodes = n_cell_input_nodes
         self.n_edges = self.encoder.num_edges
         self.edge2index = self.encoder.edge2index
 
