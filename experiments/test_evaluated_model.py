@@ -69,8 +69,9 @@ def main(cfg: omegaconf.DictConfig):
     wandb.init(**cfg.wandb,
                tags=[f'seed_{seed}', model_name],
                )
-
-    out_path = Path(cfg.model_dir) / device / f'{dataset_type}' / dataset_name / model_name / str(seed)
+    window_size = int(cfg.benchmark.dataloader.window_size)
+    search_window_size = int(cfg.benchmark.search_window_size)
+    out_path = Path(cfg.model_dir) / device / f'{dataset_type}' / f'{dataset_name}' / f'{model_name}_{search_window_size}_{window_size}' / str(seed)
     if not out_path.exists():
         os.makedirs(out_path, exist_ok=True)
 
@@ -151,7 +152,9 @@ def main(cfg: omegaconf.DictConfig):
     n_prediction_steps = (dataset.n_prediction_steps - 1) // search_sample_interval + 1
 
     # TODO check what data to pass
-    saved_data_info = torch.load(out_path / 'Model' / 'model_weights.pth')
+    model_path = Path(cfg.model_dir) / device / f'{dataset_type}' / f'{dataset_name}' / f'{model_name}_{search_window_size}' / str(seed)
+
+    saved_data_info = torch.load(model_path / 'Model' / 'model_weights.pth')
     if model_type == 'seq':
         operations_encoder, has_edges_encoder = get_optimized_archs(saved_data_info, 'arch_p_encoder', 'mask_encoder')
         operations_decoder, has_edges_decoder = get_optimized_archs(saved_data_info, 'arch_p_decoder', 'mask_decoder')

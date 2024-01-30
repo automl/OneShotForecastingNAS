@@ -7,6 +7,7 @@ external_forecast_horizon: 96
 do_normalization: true
 metric: mean_MSE_forecasting
 make_dataset_uni_variant: false
+search_window_size: 336
 
 dataloader:
   batch_size: 64
