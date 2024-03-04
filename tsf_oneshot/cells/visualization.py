@@ -2,6 +2,7 @@
 # https://github.com/khanrc/pt.darts/blob/master/visualize.py
 import sys
 from graphviz import Digraph
+from tsf_oneshot.cells.utils import check_node_is_connected_to_out
 
 
 def plot( n_nodes: int,
@@ -38,11 +39,10 @@ def plot( n_nodes: int,
 
     max_nodes = n_nodes + n_input_nodes
 
-    for i in range(n_input_nodes, max_nodes - 1):
-        g.node(str(i), fillcolor='lightblue')
     g.node(f"(out) {max_nodes - 1}", fillcolor='palegoldenrod')
 
     k = 0
+    all_edges = {}
     for i in range(n_input_nodes, max_nodes):
         # The first 2 nodes are input nodes
         for j in range(i):
@@ -52,16 +52,42 @@ def plot( n_nodes: int,
                 else:
                     end = str(i)
                 if j < n_input_nodes:
-                    start = f'(in) {i}'
+                    start = f'(in) {j}'
                 else:
                     start = str(j)
-                g.edge(start, end, label=PRIMITIVES[operations[k]], fillcolor="gray")
+                all_edges[f'{i}<-{j}'] = (start, end, PRIMITIVES[operations[k]])
+            k+=1
+
+    nodes_to_remove = set(range(n_input_nodes, max_nodes - 1))
+    for i in range(n_input_nodes, max_nodes - 1):
+        check_node_is_connected_to_out(i, n_nodes_max=max_nodes, nodes_to_remove=nodes_to_remove,
+                                       edges=all_edges)
+
+    for i in range(n_input_nodes, max_nodes - 1):
+        if i not in nodes_to_remove:
+            g.node(str(i), fillcolor='lightblue')
+
+    edges_to_remove = set()
+    for node_to_remove in nodes_to_remove:
+        for edge in all_edges.keys():
+            edge_nodes = edge.split('<-')
+            if str(node_to_remove) in edge_nodes:
+                edges_to_remove.add(edge)
+
+    for edge2remove in edges_to_remove:
+        all_edges.pop(edge2remove)
+
+
+
+    for k, value in all_edges.items():
+        g.edge(value[0], value[1], label=value[2], fillcolor="gray")
 
     # add image caption
     if caption:
         g.attr(label=caption, overlap='false', fontsize='20', fontname='times')
 
-    g.render(file_path, view=False)
+    g.render(file_path, view=True)
+
 
 
 if __name__ == '__main__':

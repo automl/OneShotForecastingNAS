@@ -250,7 +250,7 @@ class LinearDecoder(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.linear_decoder = nn.Sequential(
             nn.Linear(window_size, forecasting_horizon),
-            self.norm,
+            #self.norm,
             nn.ReLU(),
             nn.Dropout(dropout),
             )

@@ -1,4 +1,4 @@
-seed: 0
+seed: 4
 
 benchmark:
   dataset_root: "/phys/ssd2/TSF_DATA/"
@@ -31,10 +31,11 @@ model:
 
 val_share: 0.5
 
-model_dir: /phys/ssd2/TSF_OneShot/
+model_dir: /phys/ssd2/TSF_Oneshot_PC2/res_ln/LN_sig/models/
 
 train:
-  n_epochs: 60
+  n_epochs: 40
+  n_epochs_eval: 100
   grad_clip: 0.1
   amp_enable: true
   targe_scaler: 'standard'

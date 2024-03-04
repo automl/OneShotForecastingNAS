@@ -10,7 +10,8 @@ from tsf_oneshot.cells.encoders import MLPFlatModule, IdentityFlatEncoderModule
 from tsf_oneshot.cells.decoders import PRIMITIVES_Decoder
 from tsf_oneshot.cells.ops import MixedEncoderOps, MixedDecoderOps, MixedFlatEncoderOps
 from tsf_oneshot.cells.utils import EmbeddingLayer
-
+from tsf_oneshot.cells.utils import check_node_is_connected_to_out
+from tsf_oneshot.cells.visualization import plot
 
 class AbstractSearchEncoderCell(nn.Module):
     op_types = MixedEncoderOps
@@ -603,6 +604,20 @@ class SampledEncoderCell(nn.Module):
                     self.edges[node_str] = op
                 k += 1
 
+        nodes_to_remove = set(range(n_input_nodes, self.max_nodes - 1))
+        for i in range(n_input_nodes, self.max_nodes - 1):
+            check_node_is_connected_to_out(i, n_nodes_max=self.max_nodes, nodes_to_remove=nodes_to_remove, edges=self.edges)
+
+        edges_to_remove = set()
+        for node_to_remove in nodes_to_remove:
+            for edge in self.edges.keys():
+                edge_nodes = edge.split('<-')
+                if str(node_to_remove) in edge_nodes:
+                    edges_to_remove.add(edge)
+
+        for edge2remove in edges_to_remove:
+            self.edges.pop(edge2remove)
+
         self.edge_keys = sorted(list(self.edges.keys()))
         self.edge2index = {key: i for i, key in enumerate(self.edge_keys)}
         self.num_edges = len(self.edges)
@@ -732,6 +747,20 @@ class SampledFlatEncoderCell(SampledEncoderCell):
                                                forecasting_horizon=self.forecasting_horizon, **op_kwargs)
                     self.edges[node_str] = op
                 k += 1
+
+        nodes_to_remove = set(range(n_input_nodes, self.max_nodes - 1))
+        for i in range(n_input_nodes, self.max_nodes - 1):
+            check_node_is_connected_to_out(i, n_nodes_max=self.max_nodes, nodes_to_remove=nodes_to_remove,
+                                           edges=self.edges)
+        edges_to_remove = set()
+        for node_to_remove in nodes_to_remove:
+            for edge in self.edges.keys():
+                edge_nodes = edge.split('<-')
+                if str(node_to_remove) in edge_nodes:
+                    edges_to_remove.add(edge)
+
+        for edge2remove in edges_to_remove:
+            self.edges.pop(edge2remove)
 
         # if the final outputs are identity layers,
         # we need to make sure that the output layer is not incorrectly normalized

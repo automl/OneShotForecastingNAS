@@ -32,6 +32,23 @@ def unfold_tensor(x:torch.Tensor, skip_size:int, x_shape_info: tuple[torch.Tenso
     return x
 
 
+def check_node_is_connected_to_out(node_idx, n_nodes_max:int, nodes_to_remove: set, edges):
+    if node_idx in nodes_to_remove:
+        for i in range(node_idx, n_nodes_max):
+            edge = f'{i}<-{node_idx}'
+            if edge in edges:
+                if i == n_nodes_max - 1:
+                    nodes_to_remove.remove(node_idx)
+                    return True
+                else:
+                    is_connect_to_out = check_node_is_connected_to_out(i, n_nodes_max, nodes_to_remove, edges)
+                    if is_connect_to_out:
+                        nodes_to_remove.remove(node_idx)
+                        return True
+    return False
+
+
+
 class EmbeddingLayer(nn.Module):
     # https://github.com/cure-lab/LTSF-Linear/blob/main/layers/Embed.py
     def __init__(self, c_in, d_model, kernel_size=2, dilation:int=1):
@@ -48,10 +65,11 @@ class EmbeddingLayer(nn.Module):
         #"""
         self.c_in = c_in
         self.d_model = d_model
-        #self.embedding = nn.Linear(
-        #    c_in, d_model, bias=False
-        #)
+        self.embedding = nn.Linear(
+            c_in, d_model, bias=False
+        )
 
     def forward(self, x_past: torch.Tensor):
+        #return self.embedding(x_past)
         return self.chomp1(self.tokenConv(x_past.permute(0, 2, 1))).transpose(1, 2)
         #return self.embedding(x_past)

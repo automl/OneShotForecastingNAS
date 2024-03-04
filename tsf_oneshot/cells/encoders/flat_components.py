@@ -176,7 +176,7 @@ class NBEATSModule(nn.Module):
     def generate_fc_layers(num_fc_layers: int, feature_in: int, width: int, norm_type: str = 'bn', dropout: float = 0.2,
                            **kwargs):
         fc_layers = []
-        for _ in range(num_fc_layers):
+        for i in range(num_fc_layers):
             if norm_type == 'ln':
                 norm_layer = nn.LayerNorm(width)
             elif norm_type == 'bn':
@@ -192,6 +192,7 @@ class NBEATSModule(nn.Module):
                     nn.Dropout(dropout),
                 ]
             )
+
             feature_in = width
         fc_layers = nn.Sequential(*fc_layers)
         return fc_layers

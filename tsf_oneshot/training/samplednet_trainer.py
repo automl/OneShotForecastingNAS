@@ -177,7 +177,7 @@ class SampledForecastingNetTrainer:
 
         self.lr_scheduler_w = lr_scheduler_w
 
-        if isinstance(self.lr_scheduler_w, torch.optim.lr_scheduler.OneCycleLR):
+        if isinstance(self.lr_scheduler_w, (torch.optim.lr_scheduler.OneCycleLR, )):
             self.lr_scheduler_type = LR_SCHEDULER_TYPE.batch
         else:
             self.lr_scheduler_type = LR_SCHEDULER_TYPE.epoch
@@ -261,7 +261,7 @@ class SampledForecastingNetTrainer:
             w_loss, _ = self.update_weights(train_X, train_y)
             torch.cuda.empty_cache()
 
-        train_res = self.evaluate(self.train_loader, epoch, 'train')
+        # train_res = self.evaluate(self.train_loader, epoch, 'train')
 
         val_res = self.evaluate(self.val_loader, epoch, 'val')
         test_res = self.evaluate(self.test_loader, epoch, 'test')

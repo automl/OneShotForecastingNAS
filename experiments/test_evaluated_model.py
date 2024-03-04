@@ -250,6 +250,7 @@ def main(cfg: omegaconf.DictConfig):
         del saved_data_info
 
         head_idx = head[0]
+        head_idx=1
         HEAD = list(cfg.model.HEADs)[head_idx]
 
         decoder_choice_seq = decoder_choice_seq[0]
@@ -348,16 +349,16 @@ def main(cfg: omegaconf.DictConfig):
     epoch_start = 0
     #if (out_path / 'SampledNet' / 'Model').exists():
     #    epoch_start = trainer.load(out_path, model=model, w_optimizer=w_optimizer, lr_scheduler_w=lr_scheduler)
-    for epoch in range(epoch_start, cfg.train.n_epochs):
+    for epoch in range(epoch_start, cfg.train.n_epochs_eval):
         val_res, test_res = trainer.train_epoch(epoch)
-        trainer.save(out_path, epoch=epoch)
-
-        with open(out_path / 'eval_res.json', 'w') as f:
-            json.dump(test_res, f)
 
         do_early_stopping = early_stopping(val_res, test_res, epoch)
         if do_early_stopping:
             break
+        trainer.save(out_path, epoch=epoch)
+
+        with open(out_path / 'eval_res.json', 'w') as f:
+            json.dump(test_res, f)
 
     print(f"best val loss: {early_stopping.best_val_loss},"
           f"best test loss: {early_stopping.best_test_loss}")

@@ -8,7 +8,7 @@ from torch.nn.utils import weight_norm
 from tsf_oneshot.cells.encoders.flat_components import TSMLPBatchNormLayer
 from tsf_oneshot.cells.utils import fold_tensor, unfold_tensor, _Chomp1d
 
-TCN_DEFAULT_KERNEL_SIZE = 7
+TCN_DEFAULT_KERNEL_SIZE = 15
 
 
 class GRUEncoderModule(nn.Module):
@@ -129,6 +129,7 @@ class TCNEncoderModule(nn.Module):
         padding = (kernel_size - 1) * dilation
         self.conv1 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,
                                            stride=stride, padding=padding, dilation=dilation))
+        self.linear = nn.Conv1d(d_model, d_model, 1)
         self.chomp1 = _Chomp1d(padding)
         self.relu1 = nn.ReLU()
         self.dropout1 = nn.Dropout(dropout)
@@ -139,8 +140,7 @@ class TCNEncoderModule(nn.Module):
         self.relu2 = nn.ReLU()
         self.dropout2 = nn.Dropout(dropout)
 
-        self.net = nn.Sequential(self.conv1, self.chomp1, self.relu1, self.dropout1,
-                                 self.conv2, self.chomp2, self.relu2, self.dropout2, )
+        self.net = nn.Sequential(self.conv1, self.chomp1, self.relu1)
         self.relu = nn.ReLU()
         self.norm = nn.LayerNorm(d_model)
 
@@ -157,10 +157,10 @@ class TCNEncoderModule(nn.Module):
         # swap sequence and feature dimensions for use with convolutional nets
         x_past = x_past.transpose(1, 2).contiguous()
         out = self.net(x_past)
-        out = self.relu(out + x_past)
+        out = out + x_past
         out = out.transpose(1, 2).contiguous()
         hx = out[:, [-1]].transpose(0, 1)
-        return self.dropout(self.norm(out)), hx, self.hx_encoder_layer(hx)
+        return self.dropout(out), hx, self.hx_encoder_layer(hx)
 
 
 class MLPMixEncoderModule(nn.Module):
