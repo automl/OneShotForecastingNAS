@@ -125,8 +125,8 @@ class TCNDecoderModule(ForecastingDecoderLayer):
         self.relu2 = nn.ReLU()
         self.dropout2 = nn.Dropout(dropout)
 
-        self.net = nn.Sequential(self.conv1, self.chomp1, self.relu1, self.dropout1,
-                                 self.conv2, self.chomp2, self.relu2, self.dropout2)
+        self.net = nn.Sequential(self.conv1, self.chomp1, self.relu1)
+
         self.relu = nn.ReLU()
         self.norm = nn.LayerNorm(d_model)
         self.receptive_field = 1 + 2 * (kernel_size - 1) * dilation
@@ -146,10 +146,9 @@ class TCNDecoderModule(ForecastingDecoderLayer):
         x_all = x_all.transpose(1, 2).contiguous()
         out = self.net(x_all)[:, :, -len_x_future:]
         out = out.transpose(1, 2).contiguous()
-        out = self.relu(out + x_future)
+        out = out + x_future
 
-        return self.norm(out)
-
+        return self.dropout(self.norm(out))
 
 class MLPMixDecoderModule(ForecastingDecoderLayer):
     # https://arxiv.org/pdf/2303.06053.pdf
