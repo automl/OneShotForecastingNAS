@@ -618,6 +618,7 @@ class SampledEncoderCell(nn.Module):
         for edge2remove in edges_to_remove:
             self.edges.pop(edge2remove)
 
+
         self.edge_keys = sorted(list(self.edges.keys()))
         self.edge2index = {key: i for i, key in enumerate(self.edge_keys)}
         self.num_edges = len(self.edges)
@@ -742,7 +743,10 @@ class SampledFlatEncoderCell(SampledEncoderCell):
                 if has_edges[k]:
                     node_str = f"{i}<-{j}"
                     op_name = PRIMITIVES[operations[k]]
+                    ops_kwargs_general = dict(**OPS_kwargs_.get('general', {}))
                     op_kwargs = OPS_kwargs_.get(op_name, {})
+                    op_kwargs.update(ops_kwargs_general)
+
                     op = self.all_ops[op_name](window_size=self.window_size,
                                                forecasting_horizon=self.forecasting_horizon, **op_kwargs)
                     self.edges[node_str] = op
