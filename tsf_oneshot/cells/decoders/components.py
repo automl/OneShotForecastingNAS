@@ -126,6 +126,7 @@ class TCNDecoderModule(ForecastingDecoderLayer):
         self.dropout2 = nn.Dropout(dropout)
 
         self.net = nn.Sequential(self.conv1, self.chomp1, self.relu1)
+        self.dropout = nn.Dropout(dropout)
 
         self.relu = nn.ReLU()
         self.norm = nn.LayerNorm(d_model)
