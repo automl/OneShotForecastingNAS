@@ -50,7 +50,7 @@ class GRUEncoderModule(nn.Module):
 
 class LSTMEncoderModule(nn.Module):
     def __init__(self, d_model: int, ts_skip_size: int = 1, bias: bool = True,
-                 bidirectional: bool = False, dropout=0.2,
+                 bidirectional: bool = True, dropout: float = 0.2,
                  **kwargs):
         super(LSTMEncoderModule, self).__init__()
         self.norm = nn.LayerNorm(d_model)
@@ -157,10 +157,10 @@ class TCNEncoderModule(nn.Module):
         # swap sequence and feature dimensions for use with convolutional nets
         x_past = x_past.transpose(1, 2).contiguous()
         out = self.net(x_past)
-        out = out + x_past
+        #out = out + x_past
         out = out.transpose(1, 2).contiguous()
         hx = out[:, [-1]].transpose(0, 1)
-        return self.dropout(out), hx, self.hx_encoder_layer(hx)
+        return self.dropout(self.norm(out)), hx, self.hx_encoder_layer(hx)
 
 
 class MLPMixEncoderModule(nn.Module):
@@ -176,7 +176,7 @@ class MLPMixEncoderModule(nn.Module):
             nn.ReLU(),
             nn.Dropout(dropout)
         )
-        # self.time_norm = nn.BatchNorm1d(d_model * window_size)
+        #self.time_norm = nn.BatchNorm1d(d_model * window_size)
         self.time_norm = nn.LayerNorm(d_model)
 
         if d_ff is None:
@@ -189,23 +189,24 @@ class MLPMixEncoderModule(nn.Module):
             nn.Linear(d_ff, d_model),
             nn.Dropout(dropout)
         )
+        self.dropout2 = nn.Dropout(dropout)
         self.feature_norm = nn.LayerNorm(d_model)
         self.hx_encoder_layer = nn.Linear(d_model, d_model)
 
     def forward(self, x_past: torch.Tensor, hx: Any | None = None):
         x_past, size_info = fold_tensor(x_past, self.ts_skip_size)
         input_t = self.time_norm(x_past).transpose(1, 2).contiguous()
+        #input_t = x_past.transpose(1, 2).contiguous()
         out_t = self.time_mixer(input_t)
 
         input_f = out_t.transpose(1, 2).contiguous()
 
-        input_f += input_f + x_past
+        input_f = input_f + x_past
 
         input_f = unfold_tensor(input_f, self.ts_skip_size, size_info)
         input_f_shape = input_f.shape
         input_f = self.feature_norm(input_f)
         out_f = self.feature_mixer(input_f)
-
         out = out_f + input_f
         hx = out[:, [-1]].transpose(0, 1)
 

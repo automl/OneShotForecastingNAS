@@ -133,6 +133,7 @@ class TCNDecoderModule(ForecastingDecoderLayer):
 
         self.init_weights()
 
+
     def init_weights(self):
         self.conv1.weight.data.normal_(0, 0.01)
         self.conv2.weight.data.normal_(0, 0.01)
@@ -146,7 +147,7 @@ class TCNDecoderModule(ForecastingDecoderLayer):
         x_all = x_all.transpose(1, 2).contiguous()
         out = self.net(x_all)[:, :, -len_x_future:]
         out = out.transpose(1, 2).contiguous()
-        out = out + x_future
+        #out = out + x_future
 
         return self.dropout(self.norm(out))
 
