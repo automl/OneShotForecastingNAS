@@ -250,7 +250,6 @@ def main(cfg: omegaconf.DictConfig):
         del saved_data_info
 
         head_idx = head[0]
-        head_idx=1
         HEAD = list(cfg.model.HEADs)[head_idx]
 
         decoder_choice_seq = decoder_choice_seq[0]
