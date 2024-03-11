@@ -492,9 +492,12 @@ class ForecastingTrainer:
             if epoch % self.proj_intv == 0 or epoch == tune_epochs - 1:
                 if epoch == tune_epochs - 1:
                     # We make decision on this only in the last itartion!
+                    selected_eid = num_edges - 2
+                elif epoch == tune_epochs - 1 - self.proj_intv:
+                    # heads/ loss should be placed at the last two operation!
                     selected_eid = num_edges - 1
                 else:
-                    candidate_edges = np.nonzero(self.model.candidate_flag_ops[:-1])[0]
+                    candidate_edges = np.nonzero(self.model.candidate_flag_ops[:-2])[0]
                     if len(candidate_edges) == 0:
                         continue
                     selected_eid = np.random.choice(candidate_edges)
