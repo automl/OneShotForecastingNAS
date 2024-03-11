@@ -50,7 +50,7 @@ class GRUEncoderModule(nn.Module):
 
 class LSTMEncoderModule(nn.Module):
     def __init__(self, d_model: int, ts_skip_size: int = 1, bias: bool = True,
-                 bidirectional: bool = True, dropout: float = 0.2,
+                 bidirectional: bool = False, dropout: float = 0.2,
                  **kwargs):
         super(LSTMEncoderModule, self).__init__()
         self.norm = nn.LayerNorm(d_model)
@@ -140,7 +140,7 @@ class TCNEncoderModule(nn.Module):
         self.relu2 = nn.ReLU()
         self.dropout2 = nn.Dropout(dropout)
 
-        self.net = nn.Sequential(self.conv1, self.chomp1, self.relu1)
+        self.net = nn.Sequential(self.conv1, self.chomp1,  self.relu1)
         self.relu = nn.ReLU()
         self.norm = nn.LayerNorm(d_model)
 
