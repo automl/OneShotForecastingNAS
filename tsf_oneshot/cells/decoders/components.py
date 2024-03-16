@@ -160,6 +160,7 @@ class SepTCNDecoderModule(TCNDecoderModule):
         padding = (kernel_size - 1) * dilation
         self.conv1 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,
                                            stride=stride, padding=padding, dilation=dilation, groups=d_model))
+        self.linear = nn.Conv1d(d_model, d_model, 1)
         self.chomp1 = _Chomp1d(padding)
         self.relu1 = nn.ReLU()
         self.dropout1 = nn.Dropout(dropout)
@@ -169,9 +170,11 @@ class SepTCNDecoderModule(TCNDecoderModule):
                                            stride=stride, padding=padding, dilation=dilation))
         self.chomp2 = _Chomp1d(padding)
         self.relu2 = nn.ReLU()
+        self.norm = nn.LayerNorm(d_model)
         self.dropout2 = nn.Dropout(dropout)
 
         self.net = nn.Sequential(self.conv1, self.chomp1,  self.relu1, self.dropout1, self.linear, self.dropout2)
+        self.dropout = nn.Dropout(dropout)
         self.receptive_field = 1 + 2 * (kernel_size - 1) * dilation
 
         self.init_weights()

@@ -9,9 +9,9 @@ seq_model:
   n_nodes: 4
   n_cell_input_nodes: 2
   backcast_loss_ration: 0.0
-  PRIMITIVES_encoder: [ 'mlp_mix','gru', 'lstm','transformer', 'tcn', 'skip_connection' ]
+  PRIMITIVES_encoder: [ 'mlp_mix','gru', 'lstm','transformer', 'tcn','skip_connection' ]
   # PRIMITIVES_encoder: ['transformer']
-  PRIMITIVES_decoder: [ 'mlp_mix', 'gru', 'lstm', 'transformer', 'tcn', 'skip_connection' ]
+  PRIMITIVES_decoder: [ 'mlp_mix', 'gru', 'lstm', 'transformer', 'tcn','skip_connection' ]
   #  PRIMITIVES_decoder: ['lstm']
   DECODERS: ['seq', 'linear']
 
