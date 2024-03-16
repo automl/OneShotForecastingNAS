@@ -5,6 +5,7 @@ from tsf_oneshot.cells.encoders.components import (
     LSTMEncoderModule,
     TransformerEncoderModule,
     TCNEncoderModule,
+    SepTCNEncoderModule,
     IdentityEncoderModule,
     MLPMixEncoderModule
 )
@@ -17,6 +18,7 @@ PRIMITIVES_Encoder = {
     "lstm": LSTMEncoderModule,
     "transformer": TransformerEncoderModule,
     "tcn": TCNEncoderModule,
+    "sep_tcn": SepTCNEncoderModule,
     "mlp_mix": MLPMixEncoderModule,
     "skip_connection": IdentityEncoderModule,
 }

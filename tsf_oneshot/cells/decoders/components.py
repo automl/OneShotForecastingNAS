@@ -12,6 +12,7 @@ from torch.nn.utils import weight_norm
 from tsf_oneshot.cells.encoders.components import _Chomp1d, TCN_DEFAULT_KERNEL_SIZE, TSMLPBatchNormLayer
 from tsf_oneshot.cells.utils import fold_tensor, unfold_tensor
 
+
 class ForecastingDecoderLayer(nn.Module):
     @abc.abstractmethod
     def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
@@ -134,10 +135,8 @@ class TCNDecoderModule(ForecastingDecoderLayer):
 
         self.init_weights()
 
-
     def init_weights(self):
         self.conv1.weight.data.normal_(0, 0.01)
-        self.conv2.weight.data.normal_(0, 0.01)
 
     def forward(self,  x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
                 hx1: torch.Tensor, hx2: torch.Tensor):
@@ -151,6 +150,32 @@ class TCNDecoderModule(ForecastingDecoderLayer):
         #out = out + x_future
 
         return self.dropout(self.norm(out))
+
+
+class SepTCNDecoderModule(TCNDecoderModule):
+    def __init__(self, d_model: int,
+                 kernel_size: int = TCN_DEFAULT_KERNEL_SIZE,
+                 stride: int = 1, dilation: int = 1, dropout: float = 0.2, **kwargs):
+        super(TCNDecoderModule, self).__init__()
+        padding = (kernel_size - 1) * dilation
+        self.conv1 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,
+                                           stride=stride, padding=padding, dilation=dilation, groups=d_model))
+        self.chomp1 = _Chomp1d(padding)
+        self.relu1 = nn.ReLU()
+        self.dropout1 = nn.Dropout(dropout)
+
+        padding = (kernel_size - 1) * dilation
+        self.conv2 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,
+                                           stride=stride, padding=padding, dilation=dilation))
+        self.chomp2 = _Chomp1d(padding)
+        self.relu2 = nn.ReLU()
+        self.dropout2 = nn.Dropout(dropout)
+
+        self.net = nn.Sequential(self.conv1, self.chomp1,  self.relu1, self.dropout1, self.linear, self.dropout2)
+        self.receptive_field = 1 + 2 * (kernel_size - 1) * dilation
+
+        self.init_weights()
+
 
 class MLPMixDecoderModule(ForecastingDecoderLayer):
     # https://arxiv.org/pdf/2303.06053.pdf

@@ -129,16 +129,9 @@ class TCNEncoderModule(nn.Module):
         padding = (kernel_size - 1) * dilation
         self.conv1 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,
                                            stride=stride, padding=padding, dilation=dilation))
-        self.linear = nn.Conv1d(d_model, d_model, 1)
         self.chomp1 = _Chomp1d(padding)
         self.relu1 = nn.ReLU()
         self.dropout1 = nn.Dropout(dropout)
-
-        self.conv2 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,
-                                           stride=stride, padding=padding, dilation=dilation))
-        self.chomp2 = _Chomp1d(padding)
-        self.relu2 = nn.ReLU()
-        self.dropout2 = nn.Dropout(dropout)
 
         self.net = nn.Sequential(self.conv1, self.chomp1,  self.relu1)
         self.relu = nn.ReLU()
@@ -151,7 +144,6 @@ class TCNEncoderModule(nn.Module):
 
     def init_weights(self):
         self.conv1.weight.data.normal_(0, 0.01)
-        self.conv2.weight.data.normal_(0, 0.01)
 
     def forward(self, x_past: torch.Tensor, hx: Any | None = None):
         # swap sequence and feature dimensions for use with convolutional nets
@@ -161,6 +153,35 @@ class TCNEncoderModule(nn.Module):
         out = out.transpose(1, 2).contiguous()
         hx = out[:, [-1]].transpose(0, 1)
         return self.dropout(self.norm(out)), hx, self.hx_encoder_layer(hx)
+
+
+class SepTCNEncoderModule(TCNEncoderModule):
+    def __init__(self, d_model: int, kernel_size: int = TCN_DEFAULT_KERNEL_SIZE, stride: int = 1, dilation: int = 1,
+                 dropout: float = 0.2, **kwargs):
+        super(TCNEncoderModule, self).__init__()
+        # dilation = ts_skip_size
+        padding = (kernel_size - 1) * dilation
+        self.conv1 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,
+                                           stride=stride, padding=padding, dilation=dilation, groups=d_model))
+        self.linear = nn.Conv1d(d_model, d_model, 1)
+        self.chomp1 = _Chomp1d(padding)
+        self.relu1 = nn.ReLU()
+        self.dropout1 = nn.Dropout(dropout)
+
+        self.conv2 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,
+                                           stride=stride, padding=padding, dilation=dilation))
+        self.chomp2 = _Chomp1d(padding)
+        self.relu2 = nn.ReLU()
+        self.dropout2 = nn.Dropout(dropout)
+
+        self.net = nn.Sequential(self.conv1, self.chomp1,  self.relu1, self.dropout1, self.linear, self.dropout2)
+        self.relu = nn.ReLU()
+        self.norm = nn.LayerNorm(d_model)
+
+        self.hx_encoder_layer = nn.Linear(d_model, d_model)
+        self.dropout = nn.Dropout(dropout)
+
+        self.init_weights()
 
 
 class MLPMixEncoderModule(nn.Module):
