@@ -242,18 +242,20 @@ class LinearDecoder(nn.Module):
 
         self.embedding_layer = EmbeddingLayer(d_input_future, d_model)
         #self.embedding_layer = nn.Linear(d_input_future, d_model)
-        self.norm = nn.LayerNorm(forecasting_horizon)
+        self.norm = nn.InstanceNorm1d(forecasting_horizon, affine=True, track_running_stats=False)
+        #self.norm = nn.LayerNorm(d_model)
         #self.linear_decoder = nn.Linear(window_size + forecasting_horizon, forecasting_horizon)
 
         #self.linear_decoder = nn.Linear(window_size + forecasting_horizon, forecasting_horizon)
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(dropout)
         self.linear_decoder = nn.Sequential(
-            nn.Linear(window_size, forecasting_horizon),
-            #self.norm,
+            #nn.Linear(window_size, forecasting_horizon),
+            nn.Conv1d(window_size, forecasting_horizon, 1),
             nn.ReLU(),
             nn.Dropout(dropout),
-            )
+            #self.norm,
+        )
 
     def forward(self, x: torch.Tensor, net_encoder_output: torch.Tensor, **kwargs):
         #if isinstance(x, torch.Tensor):
@@ -264,8 +266,9 @@ class LinearDecoder(nn.Module):
         #else:
         #    raise NotImplementedError
         #net_encoder_output = torch.cat([net_encoder_output, embedding], dim=1)
+        return self.linear_decoder(net_encoder_output)
+        #return self.linear_decoder(net_encoder_output.permute(0, 2, 1)).permute(0, 2, 1)
 
-        return self.linear_decoder(net_encoder_output.permute(0, 2, 1)).permute(0, 2, 1)
 
 
 class SearchGDASDecoder(SearchDARTSDecoder):

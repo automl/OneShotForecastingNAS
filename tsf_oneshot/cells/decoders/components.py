@@ -113,8 +113,9 @@ class TCNDecoderModule(ForecastingDecoderLayer):
                  stride: int = 1, dilation: int = 1, dropout: float = 0.2, **kwargs):
         super(TCNDecoderModule, self).__init__()
         padding = (kernel_size - 1) * dilation
-        self.conv1 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,
-                                           stride=stride, padding=padding, dilation=dilation))
+        self.conv1 = nn.Conv1d(d_model, d_model, kernel_size,
+                                           stride=stride, padding=padding, dilation=dilation)
+        self.norm1 = nn.GroupNorm(1, d_model)
         self.chomp1 = _Chomp1d(padding)
         self.relu1 = nn.ReLU()
         self.dropout1 = nn.Dropout(dropout)
@@ -126,7 +127,8 @@ class TCNDecoderModule(ForecastingDecoderLayer):
         self.relu2 = nn.ReLU()
         self.dropout2 = nn.Dropout(dropout)
 
-        self.net = nn.Sequential(self.conv1, self.chomp1, self.relu1)
+        self.net = nn.Sequential(self.conv1, self.chomp1, self.norm1, self.relu1, self.dropout1)
+
         self.dropout = nn.Dropout(dropout)
 
         self.relu = nn.ReLU()
@@ -149,7 +151,7 @@ class TCNDecoderModule(ForecastingDecoderLayer):
         out = out.transpose(1, 2).contiguous()
         #out = out + x_future
 
-        return self.dropout(self.norm(out))
+        return out
 
 
 class SepTCNDecoderModule(TCNDecoderModule):
@@ -158,8 +160,10 @@ class SepTCNDecoderModule(TCNDecoderModule):
                  stride: int = 1, dilation: int = 1, dropout: float = 0.2, **kwargs):
         super(TCNDecoderModule, self).__init__()
         padding = (kernel_size - 1) * dilation
-        self.conv1 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,
-                                           stride=stride, padding=padding, dilation=dilation, groups=d_model))
+        self.conv1 = nn.Conv1d(d_model, d_model, kernel_size,
+                                           stride=stride, padding=padding, dilation=dilation, groups=d_model)
+        self.norm1 = nn.GroupNorm(1, d_model)
+
         self.linear = nn.Conv1d(d_model, d_model, 1)
         self.chomp1 = _Chomp1d(padding)
         self.relu1 = nn.ReLU()
@@ -173,7 +177,8 @@ class SepTCNDecoderModule(TCNDecoderModule):
         self.norm = nn.LayerNorm(d_model)
         self.dropout2 = nn.Dropout(dropout)
 
-        self.net = nn.Sequential(self.conv1, self.chomp1,  self.relu1, self.dropout1, self.linear, self.dropout2)
+        self.net = nn.Sequential(self.conv1, self.chomp1,  self.dropout1,  self.norm1,
+                                 self.linear, self.relu2, self.dropout2)
         self.dropout = nn.Dropout(dropout)
         self.receptive_field = 1 + 2 * (kernel_size - 1) * dilation
 

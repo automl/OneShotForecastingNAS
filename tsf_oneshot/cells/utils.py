@@ -66,10 +66,11 @@ class EmbeddingLayer(nn.Module):
         self.c_in = c_in
         self.d_model = d_model
         self.embedding = nn.Linear(
-            c_in, d_model, bias=False
+            c_in, d_model
         )
 
     def forward(self, x_past: torch.Tensor):
+        return self.embedding(x_past)
         #return self.embedding(x_past)
-        return self.chomp1(self.tokenConv(x_past.permute(0, 2, 1))).transpose(1, 2)
+        #return self.chomp1(self.tokenConv(x_past.permute(0, 2, 1))).transpose(1, 2)
         #return self.embedding(x_past)
