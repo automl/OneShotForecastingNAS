@@ -179,7 +179,7 @@ class SepTCNEncoderModule(TCNEncoderModule):
         self.relu2 = nn.ReLU()
         self.dropout2 = nn.Dropout(dropout)
 
-        self.net = nn.Sequential(self.conv1, self.chomp1,  self.dropout1,  self.norm1,
+        self.net = nn.Sequential(self.conv1, self.chomp1,  self.norm1,
                                  self.linear, self.relu2, self.dropout2)
         self.relu = nn.ReLU()
         self.norm = nn.LayerNorm(d_model)

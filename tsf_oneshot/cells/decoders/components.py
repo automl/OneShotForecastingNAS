@@ -78,7 +78,8 @@ class TransformerDecoderModule(ForecastingDecoderLayer):
     def __init__(self, d_model: int, forecasting_horizon: int,
                  nhead: int = 8, activation='gelu', dropout:float=0.2, is_first_layer: bool = False, ts_skip_size:int=1, **kwargs):
         super(TransformerDecoderModule, self).__init__()
-        self.cell = nn.TransformerDecoderLayer(d_model, nhead=nhead, dim_feedforward=4 * d_model,dropout=dropout, batch_first=True, activation=activation)
+        self.cell = nn.TransformerDecoderLayer(d_model, nhead=nhead, dim_feedforward=4 * d_model,dropout=dropout,
+                                               batch_first=True, activation=activation)
         self.is_first_layer = is_first_layer
         # we apply posititional encoding to all decoder inputs
         self.ts_skip_size = ts_skip_size
@@ -99,7 +100,8 @@ class TransformerDecoderModule(ForecastingDecoderLayer):
             x_future, size_future = fold_tensor(x_future, skip_size=self.ts_skip_size)
             encoder_output_net, size_past = fold_tensor(encoder_output_net, self.ts_skip_size)
         mask = nn.Transformer.generate_square_subsequent_mask(x_future.shape[1], device=x_future.device)
-        output = self.cell(x_future, memory=encoder_output_net, tgt_mask=mask)
+        output = self.cell(x_future, memory=encoder_output_net, tgt_mask=mask,
+                           )
 
         if self.ts_skip_size > 1:
             output = unfold_tensor(output, self.ts_skip_size, size_future)
@@ -147,10 +149,10 @@ class TCNDecoderModule(ForecastingDecoderLayer):
         len_x_future = x_future.shape[1]
         x_all = torch.cat([encoder_output_layer[:, -self.receptive_field - 1:], x_future], dim=1)
         x_all = x_all.transpose(1, 2).contiguous()
+
         out = self.net(x_all)[:, :, -len_x_future:]
         out = out.transpose(1, 2).contiguous()
         #out = out + x_future
-
         return out
 
 
@@ -177,7 +179,7 @@ class SepTCNDecoderModule(TCNDecoderModule):
         self.norm = nn.LayerNorm(d_model)
         self.dropout2 = nn.Dropout(dropout)
 
-        self.net = nn.Sequential(self.conv1, self.chomp1,  self.dropout1,  self.norm1,
+        self.net = nn.Sequential(self.conv1, self.chomp1,  self.norm1,
                                  self.linear, self.relu2, self.dropout2)
         self.dropout = nn.Dropout(dropout)
         self.receptive_field = 1 + 2 * (kernel_size - 1) * dilation
@@ -203,7 +205,7 @@ class MLPMixDecoderModule(ForecastingDecoderLayer):
         n_past = int(np.ceil(window_size / self.ts_skip_size))  + int(np.ceil(forecasting_horizon / self.ts_skip_size))
         n_future = int(np.ceil((forecasting_horizon) / self.ts_skip_size))
         self.time_mixer = nn.Sequential(
-            nn.Linear(n_past, n_future),
+            nn.Conv1d(n_past, n_future, 1),
             nn.ReLU(),
             nn.Dropout(dropout)
         )
@@ -231,16 +233,16 @@ class MLPMixDecoderModule(ForecastingDecoderLayer):
             [encoder_output_net, x_future], dim=1
         )
 
-        out_t = self.time_norm(input_t).transpose(1, 2).contiguous()
+        out_t = self.time_norm(input_t)
 
         out_t = self.time_mixer(out_t)
 
-        input_f = out_t.transpose(1, 2).contiguous() + input_t[:, -x_future.shape[1]:, :]
+        input_f = out_t + input_t[:, -x_future.shape[1]:, :]
 
         if self.ts_skip_size > 1:
             input_f = unfold_tensor(input_f, self.ts_skip_size, size_future)
-        input_f = self.feature_norm(input_f)
-        out_f = self.feature_mixer(input_f)
+        input_f_ = self.feature_norm(input_f)
+        out_f = self.feature_mixer(input_f_)
 
         return out_f + input_f
 
