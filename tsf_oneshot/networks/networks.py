@@ -98,9 +98,7 @@ class ForecastingAbstractNetwork(nn.Module):
         if 'linear' in DECODERS:
             self.linear_decoder: LinearDecoder = LinearDecoder(window_size, forecasting_horizon,
                                                                d_input_future=d_input_future,
-                                                               d_model=d_model,
-                                                               dropout=0.0 # TODO check if we need dropout=0.0 during training!
-                                                               )
+                                                               d_model=d_model)
         self.decoder = [getattr(self, DECODER_MAPS[decoder]) for decoder in DECODERS]
 
         self.heads = MixedHead(d_model=d_model, d_output=d_output, PRIMITIVES=HEADs, OPS_kwargs=HEADs_kwargs)
