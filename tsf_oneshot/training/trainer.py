@@ -268,6 +268,8 @@ class ForecastingTrainer:
         x_future_train = x_future_train[:, self.target_indices + shift]
         target_train = target_train[:, self.target_indices + shift]
 
+        self.model.train()
+
 
         with torch.cuda.amp.autocast(enabled=self.amp_enable):
             prediction_train, w_dag_train = self.model(x_past_train, x_future_train, return_w_head=True)
@@ -343,6 +345,8 @@ class ForecastingTrainer:
         x_past_val = x_past_val_[:, self.data_indices + shift]
         x_future_val = x_future_val_[:, self.target_indices + shift]
         target_val = target_val_[:, self.target_indices + shift]
+
+        self.model.set_dropout_to_eval()
 
         with torch.cuda.amp.autocast(enabled=self.amp_enable):
 

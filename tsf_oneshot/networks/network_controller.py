@@ -116,6 +116,8 @@ class AbstractForecastingNetworkController(nn.Module):
 
         self.edges2index, self.candidate_flag_nodes = self.get_edge2index()
 
+        self.dropout_layers = self.get_all_dropout_modules()
+
     def _get_edge2index(self, n_nodes: int, net_edge2index, backbone_arch_names: list[str], idx_base: int = 0):
         edge2idx = {}
         for i in range(n_nodes):
@@ -256,6 +258,19 @@ class AbstractForecastingNetworkController(nn.Module):
         ]
 
         return optim_groups
+
+    def get_all_dropout_modules(self) -> set[nn.Module]:
+        dropout_layers = set()
+        for mn, m in self.net.named_modules():
+            if isinstance(m, nn.Dropout):
+                dropout_layers.add(m)
+
+        return dropout_layers
+
+    def set_dropout_to_eval(self):
+        # This function is applied to set the dropout layers
+        for dp in self.dropout_layers:
+            dp.eval()
 
     @torch.no_grad()
     def grad_norm_weights(self):
@@ -673,6 +688,8 @@ class ForecastingAbstractMixedNetController(AbstractForecastingNetworkController
 
         # we set mask net as an independent value, since we might need both networks as our super net
         self.mask_net = nn.Parameter(torch.zeros_like(self.arch_p_nets), requires_grad=False)
+
+        self.dropout_layers = self.get_all_dropout_modules()
 
     def get_edge2index(self):
         edge2idx = {}
