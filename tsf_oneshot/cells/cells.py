@@ -13,7 +13,6 @@ from tsf_oneshot.cells.utils import EmbeddingLayer
 from tsf_oneshot.cells.utils import check_node_is_connected_to_out
 from tsf_oneshot.cells.visualization import plot
 
-
 class AbstractSearchEncoderCell(nn.Module):
     op_types = MixedEncoderOps
     """Cell for searchs
@@ -83,9 +82,6 @@ class AbstractSearchEncoderCell(nn.Module):
                                           is_first_layer=is_first_layer,
                                           **OPS_kwargs_.get('general', {})
                                           )
-                # during searching, there is no need to have dropout here
-                # TODO check if this results in better results?
-                ops_kwargs_general['dropout'] = 0.0
 
                 op = self.op_types(self.d_model,
                                    PRIMITIVES=PRIMITIVES,
@@ -478,10 +474,6 @@ class SearchDARTSFlatEncoderCell(SearchDARTSEncoderCell):
                             else:
                                 OPS_kwargs_.update({name: {'is_last_layer': True}})
                 node_str = f"{i}<-{j}"
-
-                # during searching, there is no need to have dropout here
-                # TODO check if this results in better results?
-
                 op = self.op_types(window_size=window_size,
                                    forecasting_horizon=forecasting_horizon,
                                    PRIMITIVES=PRIMITIVES,
@@ -625,6 +617,7 @@ class SampledEncoderCell(nn.Module):
 
         for edge2remove in edges_to_remove:
             self.edges.pop(edge2remove)
+
 
         self.edge_keys = sorted(list(self.edges.keys()))
         self.edge2index = {key: i for i, key in enumerate(self.edge_keys)}
