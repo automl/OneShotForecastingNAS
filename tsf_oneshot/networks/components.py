@@ -229,7 +229,8 @@ class SearchDARTSDecoder(SearchDARTSEncoder):
 
 
 class LinearDecoder(nn.Module):
-    def __init__(self, window_size: int, forecasting_horizon, d_input_future:int, d_model:int, dropout: float=0.2):
+    def __init__(self, window_size: int, forecasting_horizon, d_input_future:int, d_model:int, dropout: float=0.2,
+                 **kwargs):
         """
         A naive Linear decoder that maps the decoder to a simple linear layer
         :param window_size:
