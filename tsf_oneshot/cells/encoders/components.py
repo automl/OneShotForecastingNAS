@@ -5,7 +5,8 @@ import torch
 from torch import nn
 from torch.nn.utils import weight_norm
 
-from autoPyTorch.pipeline.components.setup.network_backbone.forecasting_backbone.forecasting_encoder.seq_encoder.TransformerEncoder import PositionalEncoding
+from autoPyTorch.pipeline.components.setup.network_backbone.forecasting_backbone.forecasting_encoder.seq_encoder.TransformerEncoder import \
+    PositionalEncoding
 from tsf_oneshot.cells.encoders.flat_components import TSMLPBatchNormLayer
 from tsf_oneshot.cells.utils import fold_tensor, unfold_tensor, _Chomp1d
 
@@ -102,7 +103,7 @@ class TransformerEncoderModule(nn.Module):
             self.dropout = nn.Dropout(dropout)
             nn.init.uniform_(W_pos, -0.02, 0.02)
             self.ps_encoding = nn.Parameter(W_pos, requires_grad=True)
-            #self.ps_encoding = PositionalEncoding(d_model, dropout=dropout)
+            # self.ps_encoding = PositionalEncoding(d_model, dropout=dropout)
 
     def forward(self, x_past: torch.Tensor, hx: Any | None = None):
         if self.is_first_layer:
@@ -130,13 +131,15 @@ class TCNEncoderModule(nn.Module):
         # dilation = ts_skip_size
         padding = (kernel_size - 1) * dilation
         self.conv1 = nn.Conv1d(d_model, d_model, kernel_size,
-                                           stride=stride, padding=padding, dilation=dilation)
-        self.norm1 = nn.GroupNorm(1, d_model)
+                               stride=stride, padding=padding, dilation=dilation)
+
+        self.norm1 = nn.LayerNorm(d_model)
         self.chomp1 = _Chomp1d(padding)
         self.relu1 = nn.ReLU()
         self.dropout1 = nn.Dropout(dropout)
 
-        self.net = nn.Sequential(self.conv1, self.chomp1, self.norm1, self.relu1, self.dropout1)
+        self.net = nn.Sequential(self.conv1, self.chomp1)
+        self.net_post = nn.Sequential(self.norm1, self.relu1, self.dropout1)
         self.relu = nn.ReLU()
         self.norm = nn.LayerNorm(d_model)
 
@@ -152,8 +155,9 @@ class TCNEncoderModule(nn.Module):
         # swap sequence and feature dimensions for use with convolutional nets
         x_past = x_past.transpose(1, 2).contiguous()
         out = self.net(x_past)
-        #out = out + x_past
-        out = out.transpose(1, 2).contiguous()
+        # out = out + x_past
+        out = self.net_post(out.transpose(1, 2).contiguous())
+
         hx = out[:, [-1]].transpose(0, 1)
         return out, hx, self.hx_encoder_layer(hx)
 
@@ -165,10 +169,10 @@ class SepTCNEncoderModule(TCNEncoderModule):
         # dilation = ts_skip_size
         padding = (kernel_size - 1) * dilation
         self.conv1 = nn.Conv1d(d_model, d_model, kernel_size,
-                                           stride=stride, padding=padding, dilation=dilation, groups=d_model)
-        self.norm1 = nn.GroupNorm(1, d_model, )
-        self.linear = nn.Conv1d(d_model, d_model, 1)
-        self.linear2 = nn.Conv1d(d_model * 2, d_model, 1)
+                               stride=stride, padding=padding, dilation=dilation, groups=d_model)
+        self.norm1 = nn.LayerNorm(d_model, )
+        self.linear = nn.Linear(d_model, d_model)
+        self.linear2 = nn.Linear(d_model * 2, d_model)
         self.chomp1 = _Chomp1d(padding)
         self.relu1 = nn.ReLU()
         self.dropout1 = nn.Dropout(dropout)
@@ -179,8 +183,8 @@ class SepTCNEncoderModule(TCNEncoderModule):
         self.relu2 = nn.ReLU()
         self.dropout2 = nn.Dropout(dropout)
 
-        self.net = nn.Sequential(self.conv1, self.chomp1,  self.norm1,
-                                 self.linear, self.relu2, self.dropout2)
+        self.net = nn.Sequential(self.conv1, self.chomp1)
+        self.net_post = nn.Sequential(self.norm1, self.linear, self.relu2, self.dropout2)
         self.relu = nn.ReLU()
         self.norm = nn.LayerNorm(d_model)
 
@@ -204,7 +208,7 @@ class MLPMixEncoderModule(nn.Module):
             nn.Dropout(dropout)
         )
         self.time_norm = nn.LayerNorm(d_model)
-        #self.time_norm = nn.LayerNorm(d_model)
+        # self.time_norm = nn.LayerNorm(d_model)
 
         if d_ff is None:
             d_ff = d_model * 2
@@ -218,13 +222,13 @@ class MLPMixEncoderModule(nn.Module):
         )
         self.dropout2 = nn.Dropout(dropout)
         self.feature_norm = nn.LayerNorm(d_model)
-        #self.feature_norm = nn.LayerNorm(d_model)
+        # self.feature_norm = nn.LayerNorm(d_model)
         self.hx_encoder_layer = nn.Linear(d_model, d_model)
 
     def forward(self, x_past: torch.Tensor, hx: Any | None = None):
         x_past, size_info = fold_tensor(x_past, self.ts_skip_size)
         input_t = self.time_norm(x_past)
-        #input_t = x_past.transpose(1, 2).contiguous()
+        # input_t = x_past.transpose(1, 2).contiguous()
         out_t = self.time_mixer(input_t)
 
         input_f = out_t
