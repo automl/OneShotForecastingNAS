@@ -6,15 +6,15 @@ ops_setting = {
         },
         'flat_model': {
             'nbeats_g': {'width': 128,
-                         'num_fc_layers': 1,
+                         'num_fc_layers': 2,
                          'thetas_dim': 64
                          },
             'nbeats_t': {'width': 128,
-                         'num_fc_layers': 1,
+                         'num_fc_layers': 2,
                          'thetas_dim': 4
                          },
             'nbeats_s': {'width': 128,
-                         'num_fc_layers': 1,
+                         'num_fc_layers': 2,
                          'thetas_dim': 4
                          },
         },
