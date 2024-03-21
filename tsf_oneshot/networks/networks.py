@@ -96,9 +96,16 @@ class ForecastingAbstractNetwork(nn.Module):
                 **decoder_kwargs
             )
         if 'linear' in DECODERS:
+            linear_decoder_kwargs = {}
+            if 'general' in OPS_kwargs:
+                linear_decoder_kwargs.update(OPS_kwargs['general'])
+            if 'linear_decoder' in OPS_kwargs:
+                linear_decoder_kwargs.update(OPS_kwargs['linear_decoder'])
             self.linear_decoder: LinearDecoder = LinearDecoder(window_size, forecasting_horizon,
                                                                d_input_future=d_input_future,
-                                                               d_model=d_model)
+                                                               d_model=d_model,
+                                                               **linear_decoder_kwargs
+                                                               )
         self.decoder = [getattr(self, DECODER_MAPS[decoder]) for decoder in DECODERS]
 
         self.heads = MixedHead(d_model=d_model, d_output=d_output, PRIMITIVES=HEADs, OPS_kwargs=HEADs_kwargs)

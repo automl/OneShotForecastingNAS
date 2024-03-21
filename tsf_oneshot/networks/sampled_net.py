@@ -228,8 +228,13 @@ class SampledNet(nn.Module):
                 **decoder_kwargs
             )
         else:
+            linear_decoder_kwargs = {}
+            if 'general' in OPS_kwargs:
+                linear_decoder_kwargs.update(OPS_kwargs['general'])
+            if 'linear_decoder' in OPS_kwargs:
+                linear_decoder_kwargs.update(OPS_kwargs['linear_decoder'])
             self.decoder = LinearDecoder(window_size, forecasting_horizon,
-                                         d_input_future=d_input_future, d_model=d_model)
+                                         d_input_future=d_input_future, d_model=d_model, **linear_decoder_kwargs)
 
         self.head = PREDICTION_HEADs[HEAD](d_model=d_model, d_output=d_output, **HEADs_kwargs)
 
