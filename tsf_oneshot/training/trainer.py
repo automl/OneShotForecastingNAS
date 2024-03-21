@@ -346,7 +346,7 @@ class ForecastingTrainer:
         x_future_val = x_future_val_[:, self.target_indices + shift]
         target_val = target_val_[:, self.target_indices + shift]
 
-        self.model.set_dropout_to_eval()
+        self.model.on_validate()
 
         with torch.cuda.amp.autocast(enabled=self.amp_enable):
 
