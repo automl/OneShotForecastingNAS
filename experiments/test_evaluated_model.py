@@ -12,7 +12,7 @@ import wandb
 
 from autoPyTorch.datasets.time_series_dataset import get_lags_for_frequency
 from autoPyTorch.pipeline.components.setup.forecasting_target_scaling.utils import TargetScaler
-from datasets import get_LTSF_dataset, get_monash_dataset
+from datasets import get_LTSF_dataset, get_monash_dataset, get_PEMS_dataset
 from datasets.get_data_loader import get_forecasting_dataset, get_dataloader, regenerate_splits
 
 from tsf_oneshot.training.samplednet_trainer import SampledForecastingNetTrainer, EarlyStopping
@@ -92,6 +92,18 @@ def main(cfg: omegaconf.DictConfig):
                                                                                                         "make_dataset_uni_variant",
                                                                                                         False),
                                                                                                     flag='test')
+    elif dataset_type == 'PEMS':
+        data_info, split_begin, split_end, (border1s, border2s) = get_PEMS_dataset.get_test_dataset(dataset_root_path,
+                                                                                                    dataset_name=dataset_name,
+                                                                                                    file_name=cfg.benchmark.file_name,
+                                                                                                    series_type=cfg.benchmark.series_type,
+                                                                                                    window_size=int(cfg.benchmark.dataloader.window_size),
+                                                                                                    do_normalization=cfg.benchmark.do_normalization,
+                                                                                                    forecasting_horizon=cfg.benchmark.external_forecast_horizon,
+                                                                                                    make_dataset_uni_variant=cfg.benchmark.get(
+                                                                                                        "make_dataset_uni_variant",
+                                                                                                        False),
+                                                                                                    flag='test')
     else:
         raise NotImplementedError
 
@@ -136,6 +148,7 @@ def main(cfg: omegaconf.DictConfig):
         is_test_sets=[False, True, True],
         batch_size_test=128,
     )
+
     num_targets = dataset.num_targets
 
     n_time_features = len(dataset.time_feature_transform)

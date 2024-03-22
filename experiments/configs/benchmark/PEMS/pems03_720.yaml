@@ -1,0 +1,17 @@
+type: PEMS
+name: pems03_720
+file_name: PEMS03.npz
+series_type: M
+freq: 5min
+external_forecast_horizon: 96
+do_normalization: true
+metric: mean_MSE_forecasting
+make_dataset_uni_variant: false
+
+
+dataloader:
+  batch_size: 128
+  window_size: 96
+  # window_size_coefficient: 1.25
+  search_sample_interval: 1
+  num_batches_per_epoch: 1000
