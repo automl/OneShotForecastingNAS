@@ -580,6 +580,7 @@ class ForecastingTrainer:
                     loss_worst = np.inf
                     # we need to remove the edge that is the most unimportant
                     worst_eid = None
+                    edges_to_remove = []
                     for j in all_edges:
                         node = f'{selected_nid}<-{j}'
                         if node in self.model.edges2index:
@@ -593,8 +594,9 @@ class ForecastingTrainer:
                             # return all the nodes
                             set_value_for_mask(e_ids, mask_raw_value)
                         else:
-                            if j in all_edges:
-                                all_edges.remove(j)
+                            edges_to_remove.append(j)
+                    for edge in edges_to_remove:
+                        all_edges.remove(edge)
 
                     # mask out all the unrelated edges.
                     print(f'remove edge {worst_eid}')
