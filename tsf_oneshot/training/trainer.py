@@ -569,22 +569,30 @@ class ForecastingTrainer:
                 selected_nid_raw = selected_nid
 
                 # select all candidate nodes:
-                all_losses = []
-                for j in range(selected_nid):
-                    node = f'{selected_nid}<-{j}'
-                    if node in self.model.edges2index:
-                        e_ids = self.model.edges2index[node]
-                        # mask out all the related nodes
-                        mask_raw_value = set_value_for_mask(e_ids, -torch.inf)
-                        loss = self.evaluate(self.val_eval_loader, epoch=j, loader_type='proj')['MSE loss']
-                        all_losses.append(loss)
-                        # return all the nodes
-                        set_value_for_mask(e_ids, mask_raw_value)
 
-                loss_argsort = np.argsort(all_losses)[::-1][N_RESERVED_EDGES_PER_NODE:]
-                for j in loss_argsort:
+                all_edges = set(np.arange(selected_nid))
+                while(len(all_edges) > N_RESERVED_EDGES_PER_NODE):
+                    print(f'start to pure the node {selected_nid}, remaining edges are {all_edges}')
+                    loss_worst = np.inf
+                    # we need to remove the edge that is the most unimportant
+                    worst_eid = None
+                    for j in all_edges:
+                        node = f'{selected_nid}<-{j}'
+                        if node in self.model.edges2index:
+                            e_ids = self.model.edges2index[node]
+                            # mask out all the related nodes
+                            mask_raw_value = set_value_for_mask(e_ids, -torch.inf)
+                            loss = self.evaluate(self.val_eval_loader, epoch=j, loader_type='proj')['MSE loss']
+                            if loss < loss_worst:
+                                loss_worst = loss
+                                worst_eid = j
+                            # return all the nodes
+                            set_value_for_mask(e_ids, mask_raw_value)
+
                     # mask out all the unrelated edges.
-                    node = f'{selected_nid}<-{j}'
+                    print(f'remove edge {worst_eid}')
+                    all_edges.remove(worst_eid)
+                    node = f'{selected_nid}<-{worst_eid}'
                     e_ids = self.model.edges2index[node]
                     set_value_for_mask(e_ids, -torch.inf)
 
