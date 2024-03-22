@@ -592,6 +592,9 @@ class ForecastingTrainer:
                                 worst_eid = j
                             # return all the nodes
                             set_value_for_mask(e_ids, mask_raw_value)
+                        else:
+                            if j in all_edges:
+                                all_edges.remove(j)
 
                     # mask out all the unrelated edges.
                     print(f'remove edge {worst_eid}')
