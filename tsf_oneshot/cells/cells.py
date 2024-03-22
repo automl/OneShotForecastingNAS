@@ -459,7 +459,6 @@ class SearchDARTSFlatEncoderCell(SearchDARTSEncoderCell):
 
         self.preprocessing = [nn.Identity() for _ in range(n_input_nodes)]
 
-
         self.edges = nn.ModuleDict()
 
         for i in range(n_input_nodes, self.max_nodes):
@@ -477,7 +476,9 @@ class SearchDARTSFlatEncoderCell(SearchDARTSEncoderCell):
                 op = self.op_types(window_size=window_size,
                                    forecasting_horizon=forecasting_horizon,
                                    PRIMITIVES=PRIMITIVES,
-                                   OPS_kwargs=OPS_kwargs_)  # TODO check if PRIMITIVES fits the requirements?
+                                   OPS_kwargs=OPS_kwargs_,
+                                   kwargs_general=OPS_kwargs_['general']
+                                   )  # TODO check if PRIMITIVES fits the requirements?
                 self.edges[node_str] = op
 
         self.edge_keys = sorted(list(self.edges.keys()))

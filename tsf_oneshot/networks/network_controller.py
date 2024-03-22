@@ -116,6 +116,8 @@ class AbstractForecastingNetworkController(nn.Module):
 
         self.edges2index, self.candidate_flag_nodes = self.get_edge2index()
 
+        self.modules_to_eval_on_val = self.get_all_modules_to_eval_on_val()
+
     def _get_edge2index(self, n_nodes: int, net_edge2index, backbone_arch_names: list[str], idx_base: int = 0):
         edge2idx = {}
         for i in range(n_nodes):
@@ -256,6 +258,19 @@ class AbstractForecastingNetworkController(nn.Module):
         ]
 
         return optim_groups
+
+    def get_all_modules_to_eval_on_val(self) -> set[nn.Module]:
+        modules_to_eval_on_val = set()
+        for mn, m in self.net.named_modules():
+            if isinstance(m, (nn.Dropout, nn.BatchNorm1d, nn.InstanceNorm1d)):
+                modules_to_eval_on_val.add(m)
+        return modules_to_eval_on_val
+
+    def on_validate(self):
+        # This function is applied to set the dropout and BN modules to eval in order to better mimic the validation
+        # cases
+        for m in self.modules_to_eval_on_val:
+            m.eval()
 
     @torch.no_grad()
     def grad_norm_weights(self):
@@ -673,6 +688,8 @@ class ForecastingAbstractMixedNetController(AbstractForecastingNetworkController
 
         # we set mask net as an independent value, since we might need both networks as our super net
         self.mask_net = nn.Parameter(torch.zeros_like(self.arch_p_nets), requires_grad=False)
+
+        self.modules_to_eval_on_val = self.get_all_modules_to_eval_on_val()
 
     def get_edge2index(self):
         edge2idx = {}

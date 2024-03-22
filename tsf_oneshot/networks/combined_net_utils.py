@@ -110,6 +110,7 @@ def forward_concat_net(flat_net: nn.Module,
     # x_future = torch.cat([forecast_flat_out, x_future], dim=-1)
 
     seq_out = seq_net(x_past, x_future, **seq_kwargs)
+
     if forecast_only_flat:
         flat_out = flat_out[1]
     if seq_net.forecast_only:
