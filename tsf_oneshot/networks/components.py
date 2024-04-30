@@ -251,8 +251,9 @@ class LinearDecoder(nn.Module):
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(dropout)
         self.linear_decoder = nn.Sequential(
-            #nn.Linear(window_size, forecasting_horizon),
-            nn.Conv1d(window_size, forecasting_horizon, 1),
+            nn.Linear(window_size, forecasting_horizon),
+            #nn.Conv1d(window_size, forecasting_horizon, 1),
+            #nn.InstanceNorm1d(d_model, track_running_stats=False, affine=True),
             nn.ReLU(),
             nn.Dropout(dropout),
             #self.norm,
@@ -267,8 +268,8 @@ class LinearDecoder(nn.Module):
         #else:
         #    raise NotImplementedError
         #net_encoder_output = torch.cat([net_encoder_output, embedding], dim=1)
-        return self.linear_decoder(net_encoder_output)
-        #return self.linear_decoder(net_encoder_output.permute(0, 2, 1)).permute(0, 2, 1)
+        #return self.linear_decoder(net_encoder_output)
+        return self.linear_decoder(net_encoder_output.permute(0, 2, 1)).permute(0, 2, 1)
 
 
 

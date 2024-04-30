@@ -11,7 +11,7 @@ from autoPyTorch.pipeline.components.setup.network_head.forecasting_network_head
 )
 
 NBEATS_DEFAULT_THETA_DIMS = {'g': 128,
-                             's': 4,
+                             's': 8,
                              't': 4}
 
 
