@@ -215,7 +215,7 @@ def get_dataloader(dataset: TimeSeriesForecastingDataset,
                 shuffle= ~is_test,
                 num_workers=num_workers,
                 pin_memory=True,
-                drop_last=True,
+                drop_last=not is_test,
                 collate_fn=partial(custom_collate_fn, x_collector=padding_collector),
             )
         else:
