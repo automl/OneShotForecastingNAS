@@ -1,6 +1,6 @@
 type: PEMS
-name: pems07_192
-file_name: PEMS07.npz
+name: pems08_24
+file_name: PEMS08.npz
 series_type: M
 freq: 5min
 external_forecast_horizon: 24

@@ -3,7 +3,7 @@ name: pems03_96
 file_name: PEMS03.npz
 series_type: M
 freq: 5min
-external_forecast_horizon: 12
+external_forecast_horizon: 96
 do_normalization: true
 metric: mean_MSE_forecasting
 make_dataset_uni_variant: false

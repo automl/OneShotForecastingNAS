@@ -1,9 +1,9 @@
 type: PEMS
-name: pems03_192
-file_name: PEMS03.npz
+name: pems08_12
+file_name: PEMS08.npz
 series_type: M
 freq: 5min
-external_forecast_horizon: 24
+external_forecast_horizon: 12
 do_normalization: true
 metric: mean_MSE_forecasting
 make_dataset_uni_variant: false

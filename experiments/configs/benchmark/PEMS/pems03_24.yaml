@@ -1,9 +1,9 @@
 type: PEMS
-name: pems04_720
-file_name: PEMS04.npz
+name: pems03_24
+file_name: PEMS03.npz
 series_type: M
 freq: 5min
-external_forecast_horizon: 96
+external_forecast_horizon: 24
 do_normalization: true
 metric: mean_MSE_forecasting
 make_dataset_uni_variant: false
