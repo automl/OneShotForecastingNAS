@@ -1,0 +1,5 @@
+defaults:
+  - /benchmark/LTSF/: traffic_base
+
+name: traffic_96
+external_forecast_horizon: 96

@@ -1,0 +1,9 @@
+defaults:
+  - /benchmark/LTSF/: ettm2_base
+
+name: ETTm2_336
+external_forecast_horizon: 336
+
+dataloader:
+  search_sample_interval: 4
+

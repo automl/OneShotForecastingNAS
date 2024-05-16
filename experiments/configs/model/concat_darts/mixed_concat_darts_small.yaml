@@ -1,0 +1,29 @@
+defaults:
+  - /model/: mixed_concat_darts
+
+# The setting is nearly the same as the
+seq_model:
+  d_model: 8
+
+  ops_kwargs:
+    general:
+      dropout: 0.8
+    transformer:
+      nhead: 4
+    linear_decoder:
+      with_norm: True
+
+flat_model:
+  ops_kwargs:
+    general:
+      dropout: 0.8
+
+    nbeats_g:
+      width: 96
+      thetas_dim: 48
+
+    nbeats_t:
+      width: 96
+
+    nbeats_s:
+      width: 96

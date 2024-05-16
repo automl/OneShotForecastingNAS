@@ -75,8 +75,6 @@ class SampledEncoder(AbstractSearchEncoder):
 
         self.num_edges = num_edges
 
-        # self.arch_parameters = nn.Parameter(1e-3 * torch.randn(num_edges, len(PRIMITIVES)))
-
         self._device = torch.device('cpu')
 
     def get_cell(self, **kwargs):
@@ -112,7 +110,7 @@ class SampledEncoder(AbstractSearchEncoder):
 
 
 class SampledDecoder(SampledEncoder):
-    def __init__(self, use_psec=True, **kwargs):
+    def __init__(self, **kwargs):
         super(SampledDecoder, self).__init__(**kwargs)
 
     def get_cell(self, **kwargs):
@@ -149,7 +147,6 @@ class SampledNet(nn.Module):
                  HEAD: str,
                  HEADs_kwargs: dict[str, dict],
                  DECODER: str = 'seq',
-                 decoder_use_psec:bool=False,
                  backcast_loss_ration: float = 0.0
                  ):
         super(SampledNet, self).__init__()
@@ -221,7 +218,6 @@ class SampledNet(nn.Module):
                               operations=operations_decoder,
                               has_edges=has_edges_decoder,
                               OPS_kwargs=OPS_kwargs,
-                              use_psec=decoder_use_psec
                               )
         if DECODER == 'seq':
             self.decoder: SampledDecoder = SampledDecoder(
@@ -427,20 +423,8 @@ class SampledFlatNet(SampledNet):
         # we only take the past targets
         x_past_ = x_past[:, :, :self.d_output]
 
-
         seasonal_init, trend_init = self.decompsition(x_past_)
-        """
-        # This result in a feature map of size [B*N, L, 1]
-        #past_targets = torch.transpose(x_past, -1, -2)
-        past_targets_s = torch.transpose(seasonal_init, -1, -2)
-        past_targets_t = torch.transpose(trend_init, -1, -2)
-        future_targets = torch.zeros([*past_targets_s.shape[:-1], self.forecasting_horizon], device=past_targets_s.device,
-                                     dtype=past_targets_s.dtype)
-        embedding_s = torch.cat([past_targets_s, future_targets], dim=-1)
-        embedding_t = torch.cat([past_targets_t, future_targets], dim=-1)
 
-        states = [embedding_t, embedding_s]
-        """
         past_targets = torch.transpose(x_past_, -1, -2)
         future_targets = torch.zeros([*past_targets.shape[:-1], self.forecasting_horizon], device=past_targets.device,
                                      dtype=past_targets.dtype)
@@ -475,7 +459,6 @@ class SampledFlatNet(SampledNet):
 
 
 class AbstractMixedSampledNet(SampledNet):
-    decoder_use_psec_seq = False
 
     def __init__(self,
                  d_input_past: int,
@@ -532,7 +515,7 @@ class AbstractMixedSampledNet(SampledNet):
                 elif  f'{arg_name}_seq' in all_kwargs:
                     seq_net_kwargs[arg_name] = all_kwargs[f'{arg_name}_seq']
 
-        self.seq_net = SampledNet(decoder_use_psec=self.decoder_use_psec_seq, **seq_net_kwargs)
+        self.seq_net = SampledNet( **seq_net_kwargs)
 
         # get arguments for the flat net
         flat_net_kwargs = {}
@@ -564,8 +547,7 @@ class AbstractMixedSampledNet(SampledNet):
         return kwargs
 
     def transform_nets_weights(self):
-        #return torch.nn.functional.softmax(self.nets_weights, -1)
-        res =  torch.nn.functional.sigmoid(self.nets_weights)
+        res = torch.nn.functional.sigmoid(self.nets_weights)
         return res / torch.sum(res)
 
     @staticmethod
@@ -589,6 +571,7 @@ class MixedParallelSampledNet(AbstractMixedSampledNet):
         return forward_parallel_net(
             flat_net=self.flat_net,
             seq_net=self.seq_net,
+            decompose=self.decompose,
             x_past=x_past,
             x_future=x_future,
             out_weights=self.transform_nets_weights()
@@ -596,7 +579,6 @@ class MixedParallelSampledNet(AbstractMixedSampledNet):
 
 
 class MixedConcatSampledNet(AbstractMixedSampledNet):
-    decoder_use_psec_seq=False
     def __init__(self, **kwargs):
         super(MixedConcatSampledNet, self).__init__(**kwargs)
         self.flat_net.forecast_only = False # TODO check if there is a better way to handle this

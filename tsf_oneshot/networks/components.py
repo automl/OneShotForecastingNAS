@@ -20,12 +20,12 @@ from tsf_oneshot.cells.ops import PRIMITIVES_Encoder, PRIMITIVES_FLAT_ENCODER
 from tsf_oneshot.cells.utils import EmbeddingLayer
 
 
-
 class moving_avg(nn.Module):
     """
     Moving average block to highlight the trend of time series
     from https://github.com/cure-lab/LTSF-Linear/blob/main/models/DLinear.py
     """
+
     def __init__(self, kernel_size, stride):
         super(moving_avg, self).__init__()
         self.kernel_size = kernel_size
@@ -46,6 +46,7 @@ class series_decomp(nn.Module):
     Series decomposition block
     from https://github.com/cure-lab/LTSF-Linear/blob/main/models/DLinear.py
     """
+
     def __init__(self, kernel_size):
         super(series_decomp, self).__init__()
         self.moving_avg = moving_avg(kernel_size, stride=1)
@@ -210,7 +211,7 @@ class SearchGDASEncoder(AbstractSearchEncoder):
 
 
 class SearchDARTSDecoder(SearchDARTSEncoder):
-    def __init__(self, use_psec=True, **kwargs):
+    def __init__(self, **kwargs):
         super(SearchDARTSDecoder, self).__init__(**kwargs)
 
     @staticmethod
@@ -229,7 +230,8 @@ class SearchDARTSDecoder(SearchDARTSEncoder):
 
 
 class LinearDecoder(nn.Module):
-    def __init__(self, window_size: int, forecasting_horizon, d_input_future:int, d_model:int, dropout: float=0.2,
+    def __init__(self, window_size: int, forecasting_horizon, d_input_future: int, d_model: int, dropout: float = 0.2,
+                 with_norm: bool = False,
                  **kwargs):
         """
         A naive Linear decoder that maps the decoder to a simple linear layer
@@ -242,39 +244,32 @@ class LinearDecoder(nn.Module):
         self.d_input_future = d_input_future
 
         self.embedding_layer = EmbeddingLayer(d_input_future, d_model)
-        #self.embedding_layer = nn.Linear(d_input_future, d_model)
-        self.norm = nn.InstanceNorm1d(forecasting_horizon, affine=True, track_running_stats=False)
-        #self.norm = nn.LayerNorm(d_model)
-        #self.linear_decoder = nn.Linear(window_size + forecasting_horizon, forecasting_horizon)
 
-        #self.linear_decoder = nn.Linear(window_size + forecasting_horizon, forecasting_horizon)
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(dropout)
+        if with_norm:
+            linear_decoders = [
+                nn.Linear(window_size, forecasting_horizon),
+                nn.LayerNorm([d_model, forecasting_horizon]),
+                nn.ReLU(),
+                nn.Dropout(dropout)
+            ]
+        else:
+            linear_decoders = [
+                nn.Linear(window_size, forecasting_horizon),
+                nn.ReLU(),
+                nn.Dropout(dropout)
+            ]
         self.linear_decoder = nn.Sequential(
-            nn.Linear(window_size, forecasting_horizon),
-            #nn.Conv1d(window_size, forecasting_horizon, 1),
-            #nn.InstanceNorm1d(d_model, track_running_stats=False, affine=True),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            #self.norm,
+            *linear_decoders
         )
 
     def forward(self, x: torch.Tensor, net_encoder_output: torch.Tensor, **kwargs):
-        #if isinstance(x, torch.Tensor):
-        #    embedding = self.embedding_layer(x)
-        #elif isinstance(x, list):
-        #    # TODO check the cases when len(states) != self.n_cell_input_nodes !!!
-        #    embedding = self.embedding_layer(x[-1])
-        #else:
-        #    raise NotImplementedError
-        #net_encoder_output = torch.cat([net_encoder_output, embedding], dim=1)
-        #return self.linear_decoder(net_encoder_output)
         return self.linear_decoder(net_encoder_output.permute(0, 2, 1)).permute(0, 2, 1)
 
 
-
 class SearchGDASDecoder(SearchDARTSDecoder):
-    def __init__(self, use_psec=True, **kwargs):
+    def __init__(self, **kwargs):
         super(SearchDARTSDecoder, self).__init__(**kwargs)
 
     @staticmethod
@@ -291,7 +286,6 @@ class SearchGDASDecoder(SearchDARTSDecoder):
                                          cell_encoder_output=cell_encoder_output, net_encoder_output=net_encoder_output)
             states = [*states[1:], cell_out]
         return cell_out
-
 
 class AbstractFlatEncoder(AbstractSearchEncoder):
     def __init__(self,
@@ -330,7 +324,7 @@ class AbstractFlatEncoder(AbstractSearchEncoder):
             cells.append(cell)
             if num_edges is None:
                 num_edges = cell.num_edges
-                edge2index  = cell.edge2index
+                edge2index = cell.edge2index
         self.cells = nn.ModuleList(cells)
         self.edge2index = edge2index
 
@@ -381,7 +375,7 @@ class SearchDARTSFlatEncoder(AbstractFlatEncoder):
 
         x = x[:, :, :self.d_output]
 
-        #"""
+        # """
         # This result in a feature map of size [B, N, L, 1]
         past_targets = torch.transpose(x, -1, -2)
 
@@ -429,4 +423,3 @@ class SearchGDASFlatEncoder(SearchDARTSFlatEncoder):
             cell_out = cell.forward_gdas(s_previous=states, w_dag=hardwts, index=index, )
             states = [*states[1:], cell_out]
         return cell_out
-

@@ -43,7 +43,6 @@ class ForecastingAbstractNetwork(nn.Module):
                  HEADs: list[str],
                  HEADs_kwargs: dict[str, dict],
                  DECODERS: list[str] = ['seq'],
-                 decoder_use_psec: bool=False,
                  forecast_only: bool = False
                  ):
         super(ForecastingAbstractNetwork, self).__init__()
@@ -88,7 +87,6 @@ class ForecastingAbstractNetwork(nn.Module):
                               forecasting_horizon=forecasting_horizon,
                               n_cell_input_nodes=n_cell_input_nodes,
                               PRIMITIVES=PRIMITIVES_decoder,
-                              use_psec=decoder_use_psec,
                               OPS_kwargs=OPS_kwargs
                               )
         if 'seq' in DECODERS:
@@ -280,7 +278,6 @@ class ForecastingGDASFlatNetwork(ForecastingFlatAbstractNetwork):
 
 
 class ForecastingAbstractMixedNet(nn.Module):
-    decoder_use_psec_seq = False
 
     def __init__(self,
                  d_input_past: int,
@@ -327,7 +324,7 @@ class ForecastingAbstractMixedNet(nn.Module):
                 elif f'{arg_name}_seq' in all_kwargs:
                     seq_net_kwargs[arg_name] = all_kwargs[f'{arg_name}_seq']
 
-        self.seq_net = self.get_seq_net(decoder_use_psec=self.decoder_use_psec_seq, **seq_net_kwargs)
+        self.seq_net = self.get_seq_net(**seq_net_kwargs)
 
         # get arguments for the flat net
         flat_net_kwargs = {}
@@ -441,8 +438,6 @@ class ForecastingAbstractMixedParallelNet(ForecastingAbstractMixedNet):
 
 
 class ForecastingAbstractMixedConcatNet(ForecastingAbstractMixedNet):
-    decoder_use_psec_seq = False
-
     def validate_input_kwargs(self, kwargs):
         kwargs['forecast_only_flat'] = False
         assert kwargs['d_input_future'] == kwargs['d_input_past']

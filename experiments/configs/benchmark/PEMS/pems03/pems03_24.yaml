@@ -1,0 +1,5 @@
+defaults:
+  - /benchmark/PEMS/: pems03
+
+name: pems03_24
+external_forecast_horizon: 24

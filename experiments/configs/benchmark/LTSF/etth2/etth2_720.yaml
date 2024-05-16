@@ -1,0 +1,8 @@
+defaults:
+  - /benchmark/LTSF/: etth2_base
+
+name: ETTh2_720
+external_forecast_horizon: 720
+
+dataloader:
+  search_sample_interval: 8

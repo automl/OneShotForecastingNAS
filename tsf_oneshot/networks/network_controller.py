@@ -20,8 +20,6 @@ from tsf_oneshot.networks.networks import (
 )
 from tsf_oneshot.networks.combined_net_utils import get_kwargs
 from tsf_oneshot.networks.utils import (
-    apply_normalizer,
-    get_normalizer,
     gumble_sample
 )
 
@@ -355,10 +353,9 @@ class ForecastingDARTSNetworkController(AbstractForecastingNetworkController):
                                                                 HEADs_kwargs=HEADs_kwargs,
                                                                 val_loss_criterion=val_loss_criterion,
                                                                 backcast_loss_ration=backcast_loss_ration)
-        self.normalizer = get_normalizer(normalizer)
 
     def get_w_dag(self, arch_p: torch.Tensor):
-        w_dag = apply_normalizer(self.normalizer, arch_p)
+        w_dag = nn.functional.softmax(arch_p, dim=-1)
         # this is applied when all arch_p is -torch.inf
         w_dag = torch.where(torch.isnan(w_dag), 0, w_dag)
         return w_dag
@@ -505,7 +502,6 @@ class ForecastingDARTSFlatNetworkController(AbstractForecastingFlatNetworkContro
                                                           OPS_kwargs=OPS_kwargs,
                                                           HEADs_kwargs=HEADs_kwargs,
                                                           backcast_loss_ration=backcast_loss_ration)
-        self.normalizer = get_normalizer(normalizer)
 
     @staticmethod
     def load(base_path: Path, device=torch.device('cpu'),
@@ -796,7 +792,6 @@ class ForecastingDARTSMixedParallelNetController(ForecastingAbstractMixedNetCont
         all_kwargs = get_kwargs()
         all_kwargs.pop('normalizer')
         ForecastingAbstractMixedNetController.__init__(self, **all_kwargs)
-        self.normalizer = get_normalizer(normalizer)
 
     @staticmethod
     def load(base_path: Path,

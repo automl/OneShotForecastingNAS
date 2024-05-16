@@ -1,7 +1,7 @@
 from autoPyTorch.pipeline.components.setup.network.forecasting_architecture import (TransformedDistribution_,
                                                                                     ALL_NET_OUTPUT)
 
-from typing import List, Optional
+from typing import Optional
 
 import torch
 from torch.distributions import AffineTransform

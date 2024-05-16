@@ -39,6 +39,7 @@ class LR_SCHEDULER_TYPE(Enum):
     epoch = 1
     batch = 2
 
+
 def get_lr_scheduler(
         optimizer: torch.optim.Optimizer,
         cfg_lr_scheduler: omegaconf.DictConfig,

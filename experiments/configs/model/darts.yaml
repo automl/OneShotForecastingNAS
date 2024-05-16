@@ -4,12 +4,13 @@ model_type: seq
 
 grad_order: 1
 
-d_model: 64
-n_cells: 2
-n_nodes: 4
-n_cell_input_nodes: 2
-backcast_loss_ration: 0.0
-DECODERS: ['seq', 'linear']
+seq_model:
+  d_model: 64
+  n_cells: 2
+  n_nodes: 4
+  n_cell_input_nodes: 2
+  backcast_loss_ration: 0.0
+  DECODERS: ['seq', 'linear']
 
 
 use_second_order_grad: false

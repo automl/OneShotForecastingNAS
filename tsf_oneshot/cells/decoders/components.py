@@ -1,5 +1,4 @@
 import abc
-from typing import Tuple, Any
 import numpy as np
 
 from autoPyTorch.pipeline.components.setup.network_backbone.forecasting_backbone.components_util import (
@@ -9,7 +8,7 @@ import torch
 from torch import nn
 from torch.nn.utils import weight_norm
 
-from tsf_oneshot.cells.encoders.components import _Chomp1d, TCN_DEFAULT_KERNEL_SIZE, TSMLPBatchNormLayer
+from tsf_oneshot.cells.encoders.components import _Chomp1d, TCN_DEFAULT_KERNEL_SIZE
 from tsf_oneshot.cells.utils import fold_tensor, unfold_tensor
 
 
@@ -76,9 +75,12 @@ class LSTMDecoderModule(ForecastingDecoderLayer):
 class TransformerDecoderModule(ForecastingDecoderLayer):
     def __init__(self, d_model: int, forecasting_horizon: int,
                  nhead: int = 8, activation='gelu', dropout: float = 0.2, is_first_layer: bool = False,
-                 ts_skip_size: int = 1, **kwargs):
+                 ts_skip_size: int = 1, dim_feedforward: int | None = None,
+                 **kwargs):
         super(TransformerDecoderModule, self).__init__()
-        self.cell = nn.TransformerDecoderLayer(d_model, nhead=nhead, dim_feedforward=4 * d_model, dropout=dropout,
+        if dim_feedforward is None:
+            dim_feedforward = 4 * d_model
+        self.cell = nn.TransformerDecoderLayer(d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout,
                                                batch_first=True, activation=activation)
         self.is_first_layer = is_first_layer
         # we apply posititional encoding to all decoder inputs
@@ -89,8 +91,6 @@ class TransformerDecoderModule(ForecastingDecoderLayer):
             self.dropout = nn.Dropout(dropout)
             nn.init.uniform_(W_pos, -0.02, 0.02)
             self.ps_encoding = nn.Parameter(W_pos, requires_grad=True)
-
-        # self.ps_encoding = PositionalEncoding(d_model=d_model)
 
     def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
                 hx1: torch.Tensor, hx2: torch.Tensor):
@@ -117,25 +117,15 @@ class TCNDecoderModule(ForecastingDecoderLayer):
         padding = (kernel_size - 1) * dilation
         self.conv1 = nn.Conv1d(d_model, d_model, kernel_size,
                                stride=stride, padding=padding, dilation=dilation)
-        self.norm1 = nn.LayerNorm(d_model)
-        self.chomp1 = _Chomp1d(padding)
-        self.relu1 = nn.ReLU()
-        self.dropout1 = nn.Dropout(dropout)
+        norm1 = nn.LayerNorm(d_model)
+        chomp1 = _Chomp1d(padding)
+        relu1 = nn.ReLU()
+        dropout1 = nn.Dropout(dropout)
 
-        padding = (kernel_size - 1) * dilation
-        self.conv2 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,
-                                           stride=stride, padding=padding, dilation=dilation))
-        self.chomp2 = _Chomp1d(padding)
-        self.relu2 = nn.ReLU()
-        self.dropout2 = nn.Dropout(dropout)
-
-        self.net = nn.Sequential(self.conv1, self.chomp1)
-        self.net_post = nn.Sequential(self.norm1, self.relu1, self.dropout1)
+        self.net = nn.Sequential(self.conv1, chomp1)
+        self.net_post = nn.Sequential(norm1, relu1, dropout1)
 
         self.dropout = nn.Dropout(dropout)
-
-        self.relu = nn.ReLU()
-        self.norm = nn.LayerNorm(d_model)
         self.receptive_field = 1 + 2 * (kernel_size - 1) * dilation
 
         self.init_weights()
@@ -166,24 +156,16 @@ class SepTCNDecoderModule(TCNDecoderModule):
         padding = (kernel_size - 1) * dilation
         self.conv1 = nn.Conv1d(d_model, d_model, kernel_size,
                                stride=stride, padding=padding, dilation=dilation, groups=d_model)
-        self.norm1 = nn.LayerNorm(d_model)
-
-        self.linear = nn.Linear(d_model, d_model)
-        self.chomp1 = _Chomp1d(padding)
-        self.relu1 = nn.ReLU()
-        self.dropout1 = nn.Dropout(dropout)
+        norm1 = nn.LayerNorm(d_model)
+        linear = nn.Linear(d_model, d_model)
+        chomp1 = _Chomp1d(padding)
 
         padding = (kernel_size - 1) * dilation
-        self.conv2 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,
-                                           stride=stride, padding=padding, dilation=dilation))
-        self.chomp2 = _Chomp1d(padding)
-        self.relu2 = nn.ReLU()
-        self.norm = nn.LayerNorm(d_model)
-        self.dropout2 = nn.Dropout(dropout)
+        relu2 = nn.ReLU()
+        dropout2 = nn.Dropout(dropout)
 
-        self.net = nn.Sequential(self.conv1, self.chomp1)
-        self.net_post = nn.Sequential(self.norm1, self.linear, self.relu2, self.dropout2)
-        self.dropout = nn.Dropout(dropout)
+        self.net = nn.Sequential(self.conv1, chomp1)
+        self.net_post = nn.Sequential(norm1, linear, relu2, dropout2)
         self.receptive_field = 1 + 2 * (kernel_size - 1) * dilation
 
         self.init_weights()
@@ -247,65 +229,6 @@ class MLPMixDecoderModule(ForecastingDecoderLayer):
         out_f = self.feature_mixer(input_f_)
 
         return out_f + input_f
-
-
-"""
-class MLPDecoderModule(ForecastingDecoderLayer):
-    def __init__(self,
-                 d_model: int,
-                 forecasting_horizon: int,
-                 d_bottleneck: int = 8,
-                 n_liner_layers: int = 1,
-                 d_model_linear: int = 1024,
-                 ):
-        super().__init__()
-        self.forecasting_horizon = forecasting_horizon
-        self.d_model = d_model
-        self.d_bottleneck = d_bottleneck
-
-        act_func = nn.ReLU
-
-        flatten_bottleneck_size = d_bottleneck * forecasting_horizon
-        networks_future = []
-        networks_future.extend(
-            [nn.Linear(d_model, d_bottleneck), act_func()])  # reduce the network to bottleneck dimensions
-        networks_future.extend([nn.Flatten(1), nn.LayerNorm(flatten_bottleneck_size)])
-        networks_future.extend([nn.Linear(flatten_bottleneck_size, d_model_linear), act_func(),
-                                nn.LayerNorm(d_model_linear)])
-
-        self.networks_future = nn.Sequential(*networks_future)
-
-        network_linear = []
-        d_start = d_model_linear + d_model
-
-        for i in range(n_liner_layers):
-            network_linear.extend([nn.Linear(d_start, d_model_linear), act_func(), nn.LayerNorm(d_model_linear)])
-            d_start = d_model_linear
-
-        network_linear.extend(
-            [nn.Linear(d_start, flatten_bottleneck_size), act_func(), nn.LayerNorm(flatten_bottleneck_size)])
-        network_linear.extend(
-            [
-                nn.Unflatten(-1, [forecasting_horizon, d_bottleneck]),
-                nn.Linear(d_bottleneck, d_model),
-                act_func(),
-                nn.LayerNorm(d_model)
-             ]
-        )
-        self.network_linear = nn.Sequential(*network_linear)
-        self.norm = nn.LayerNorm(d_model)
-
-    def forward(self, x_future: torch.Tensor, encoder_output_layer: torch.Tensor, encoder_output_net: torch.Tensor,
-                hx1: torch.Tensor, hx2: torch.Tensor):
-        encoder_output = encoder_output_net[:, -1]
-
-        x_future = self.networks_future(x_future)
-
-        x = torch.concat([encoder_output, x_future], dim=-1)
-        x = self.network_linear(x)
-        x = self.norm(x)
-        return x
-"""
 
 
 class IdentityDecoderModule(ForecastingDecoderLayer):

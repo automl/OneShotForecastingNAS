@@ -4,24 +4,25 @@ model_type: mixed_concat
 
 grad_order: 1
 seq_model:
-  d_model: 64
+  d_model: 32
   n_cells: 2
   n_nodes: 4
-  n_cell_input_nodes: 1
+  n_cell_input_nodes: 2
   backcast_loss_ration: 0.0
   PRIMITIVES_encoder: [ 'mlp_mix','gru', 'lstm','transformer', 'tcn', 'skip_connection' ]
-  # PRIMITIVES_encoder: ['transformer']
   PRIMITIVES_decoder: [ 'mlp_mix', 'gru', 'lstm', 'transformer', 'tcn', 'skip_connection' ]
-  #  PRIMITIVES_decoder: ['lstm']
+  ops_kwargs: { }
   DECODERS: ['seq', 'linear']
 
 
 flat_model:
-  n_cells: 1
+  n_cells: 2
   n_nodes: 4
   n_cell_input_nodes: 1
   backcast_loss_ration: 0.0
   PRIMITIVES_encoder: [ 'mlp','nbeats_g','nbeats_s', 'nbeats_t', 'skip_connection' ]
+  ops_kwargs: { }
+
 
 HEADs: [ 'mse', 'mae' ]
 

@@ -13,6 +13,7 @@ from tsf_oneshot.cells.utils import EmbeddingLayer
 from tsf_oneshot.cells.utils import check_node_is_connected_to_out
 from tsf_oneshot.cells.visualization import plot
 
+
 class AbstractSearchEncoderCell(nn.Module):
     op_types = MixedEncoderOps
     """Cell for searchs
@@ -36,7 +37,6 @@ class AbstractSearchEncoderCell(nn.Module):
                  PRIMITIVES: list[str] = PRIMITIVES_Encoder.keys(),
                  OPS_kwargs: dict[str, dict] = {},
                  cell_idx: int = 0,
-                 aggregtrate_type: str = 'mean',
                  ):
         """
         Args:
@@ -56,7 +56,6 @@ class AbstractSearchEncoderCell(nn.Module):
 
         # generate dag
         self.edges = nn.ModuleDict()
-        self.aggregtrate_type = aggregtrate_type
 
         assert len(d_inputs) == n_input_nodes
         self.preprocessing = nn.ModuleList(
@@ -170,7 +169,6 @@ class AbstractSearchEncoderCell(nn.Module):
 
 
 class SearchDARTSEncoderCell(AbstractSearchEncoderCell):
-    aggregtrate_type = 'cat'
     """Cell for searchs
     Each edge is mixed and continuous relaxed.
 
@@ -477,7 +475,7 @@ class SearchDARTSFlatEncoderCell(SearchDARTSEncoderCell):
                                    forecasting_horizon=forecasting_horizon,
                                    PRIMITIVES=PRIMITIVES,
                                    OPS_kwargs=OPS_kwargs_,
-                                   kwargs_general=OPS_kwargs_['general']
+                                   kwargs_general=OPS_kwargs_.get('general', {})
                                    )  # TODO check if PRIMITIVES fits the requirements?
                 self.edges[node_str] = op
 
@@ -486,8 +484,8 @@ class SearchDARTSFlatEncoderCell(SearchDARTSEncoderCell):
         self.num_edges = len(self.edges)
 
     def aggregate_edges_outputs(self, s_curs: list[torch.Tensor]):
-        #return sum(s_curs)
         if len(s_curs) > 0:
+            # Otherwise, the training might not be stable
             return sum(s_curs) / len(s_curs)
         return 0
 
@@ -497,9 +495,6 @@ class SearchDARTSFlatEncoderCell(SearchDARTSEncoderCell):
         return edge_out
 
     def process_output(self, state: list[torch.Tensor]):
-        #backcast = state[-1][:, :, :self.window_size]
-        #forecast = sum(s[:, :, self.window_size:] for s in state[self.n_input_nodes:])
-        #return torch.cat([backcast, forecast], -1)
         return state[-1]
 
 
@@ -790,7 +785,6 @@ class SampledFlatEncoderCell(SampledEncoderCell):
         }
 
     def aggregate_edges_outputs(self, s_curs: list[torch.Tensor]):
-        #return sum(s_curs)
         if len(s_curs) > 0:
             return sum(s_curs) / len(s_curs)
         return 0
@@ -800,7 +794,4 @@ class SampledFlatEncoderCell(SampledEncoderCell):
         return edge_out
 
     def process_output(self, states: list[torch.Tensor]):
-        #backcast = states[-1][:, :, :self.window_size]
-        #forecast = sum(state[:, :, self.window_size:] for state in states[self.n_input_nodes:])
-        #return torch.cat([backcast, forecast], -1)
         return states[-1]

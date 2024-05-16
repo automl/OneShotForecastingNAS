@@ -1,0 +1,7 @@
+defaults:
+  - /benchmark/LTSF/: ettm1_base
+
+name: ETTm1_96
+external_forecast_horizon: 96
+
+

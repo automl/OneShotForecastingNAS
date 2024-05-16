@@ -1,0 +1,5 @@
+defaults:
+  - /benchmark/PEMS/: pems07
+
+name: pems07_48
+external_forecast_horizon: 48

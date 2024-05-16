@@ -23,12 +23,9 @@ from tsf_oneshot.networks.network_controller import (
     ForecastingDARTSMixedConcatNetController,
     ForecastingGDASMixedConcatNetController,
 )
-from tsf_oneshot.cells.encoders.components import TCN_DEFAULT_KERNEL_SIZE
-from autoPyTorch.datasets.time_series_dataset import get_lags_for_frequency
 
 from tsf_oneshot.training.trainer import ForecastingTrainer, ForecastingDARTSSecondOrderTrainer
 from tsf_oneshot.training.utils import get_optimizer, get_lr_scheduler
-from tsf_oneshot.cells.operations_setting import ops_setting
 
 
 def seed_everything(seed: int):
@@ -115,52 +112,24 @@ def main(cfg: omegaconf.DictConfig):
     else:
         raise NotImplementedError
 
-    dataset_info = dataset_name.split('_')[0]
-
-    if dataset_name.split('_')[0] in get_LTSF_dataset.SMALL_DATASET:
-        # Smaller dataset needs smaller number of dimensions to avoids overfitting
-        d_model_fraction = 4
-        op_kwargs = ops_setting['small_dataset']
-    else:
-        d_model_fraction = 1
-        op_kwargs = ops_setting['other_dataset']
-    op_kwargs['seq_model']['general'] =op_kwargs['general']
-    op_kwargs['flat_model']['general'] = op_kwargs['general']
-
-
     dataset = get_forecasting_dataset(dataset_name=dataset_name, **data_info)
+    # we do not need lagged value for the sake of fair comparison
     dataset.lagged_value = [0]  #+ get_lags_for_frequency(dataset.freq, num_default_lags=1)
 
     val_share: float = cfg.val_share
-    """
-    if dataset.freq == '1H' and dataset.n_prediction_steps > 168:
-        base_window_size = int(168 * cfg.dataloader.window_size_coefficient)
-    else:
-        if cfg.benchmark.get('base_window_size', None) is None:
-            base_window_size = int(np.ceil(dataset.base_window_size))
-        else:
-            base_window_size = cfg.benchmark.base_window_size
-        
-    window_size = int(base_window_size * cfg.dataloader.window_size_coefficient)
-    """
 
     window_size = int(cfg.benchmark.dataloader.window_size)
     start_idx = window_size + max(dataset.lagged_value)
     splits_new = regenerate_splits(dataset, val_share=val_share, start_idx=start_idx, strategy='holdout')
 
-    # indices = np.arange(start_idx, len(dataset))
-
-    # splits_new = [indices, indices]
-
     if search_type != 'darts':
         # for gdas, we need more iterations
-        num_batches_per_epoch = int(cfg.benchmark.dataloader.num_batches_per_epoch) * 2
         n_epochs = int(cfg.train.n_epochs) * 2
     else:
-        num_batches_per_epoch = int(cfg.benchmark.dataloader.num_batches_per_epoch)
+        num_batches_per_epoch = cfg.benchmark.dataloader.get('num_batches_per_epoch', None)
         n_epochs = int(cfg.train.n_epochs)
-    batch_size = cfg.benchmark.dataloader.batch_size
 
+    batch_size = cfg.benchmark.dataloader.batch_size
     search_sample_interval = cfg.benchmark.dataloader.get('search_sample_interval', 1)
 
     if cfg.model.get('select_with_pt', False):
@@ -194,13 +163,9 @@ def main(cfg: omegaconf.DictConfig):
         split_val_pt = [
             np.arange(border1s[1], border2s[1] - dataset.n_prediction_steps),
         ]
-        split_val_pt1 = [np.round(
-            np.linspace(
-                splits_new[1][0], splits_new[1][-1], border2s[1] - dataset.n_prediction_steps - border1s[1], endpoint=True
-            )
-        ).astype(int)]
-
+        # remove the part shared by val set and val_eval set
         no_intersect = (splits_new[0] + cfg.benchmark.external_forecast_horizon) < split_val_pt[0][0]
+
         splits_new = [splits_new[0][no_intersect], splits_new[1][:sum(no_intersect)]]
 
         dataset_val = get_forecasting_dataset(dataset_name=dataset_name, **data_info)
@@ -209,7 +174,7 @@ def main(cfg: omegaconf.DictConfig):
         # We directly subsample from the preprocessing steps
         val_eval_loader = get_dataloader(
             dataset=dataset_val, splits=split_val_pt, batch_size=batch_size,
-            num_batches_per_epoch=None,
+            num_batches_per_epoch=num_batches_per_epoch,
             is_test_sets=[True],
             window_size=window_size,
             sample_interval=1,
@@ -230,7 +195,6 @@ def main(cfg: omegaconf.DictConfig):
         sample_interval=1
     )
 
-
     # we need to adjust the values to initialize our networks
     window_size_raw = window_size
     window_size = (window_size - 1) // search_sample_interval + 1
@@ -238,6 +202,7 @@ def main(cfg: omegaconf.DictConfig):
 
     num_targets = dataset.num_targets
 
+    # get all necessary information for the dataset
     n_time_features = len(dataset.time_feature_transform)
     d_input_past = len(dataset.lagged_value) * num_targets + n_time_features
     # d_input_future = len(dataset.lagged_value) * num_targets + n_time_features
@@ -246,10 +211,10 @@ def main(cfg: omegaconf.DictConfig):
 
     if model_type == 'seq':
         net_init_kwargs = {
-            'n_cells': int(cfg.model.n_cells),
-            'n_nodes': int(cfg.model.n_nodes),
-            'n_cell_input_nodes': int(cfg.model.n_cell_input_nodes),
-            'backcast_loss_ration': float(cfg.model.get('backcast_loss_ration', 0.0))
+            'n_cells': int(cfg.model.seq_model.n_cells),
+            'n_nodes': int(cfg.model.seq_model.n_nodes),
+            'n_cell_input_nodes': int(cfg.model.seq_model.n_cell_input_nodes),
+            'backcast_loss_ration': float(cfg.model.se_model.get('backcast_loss_ration', 0.0))
         }
         cfg_model = omegaconf.OmegaConf.to_container(cfg.model, resolve=True)
         ops_kwargs = cfg_model.get('model_kwargs', {})
@@ -261,22 +226,22 @@ def main(cfg: omegaconf.DictConfig):
              'window_size': window_size,
              'forecasting_horizon': n_prediction_steps,
              'd_input_future': d_input_future,
-             'd_model': int(cfg.model.d_model) // d_model_fraction,
+             'd_model': int(cfg.model.seq_model.d_model),
              'd_output': d_output,
-             'PRIMITIVES_encoder': list(cfg.model.PRIMITIVES_encoder),
-             'PRIMITIVES_decoder': list(cfg.model.PRIMITIVES_decoder),
-             'DECODERS': list(cfg.model.DECODERS),
+             'PRIMITIVES_encoder': list(cfg.model.seq_model.PRIMITIVES_encoder),
+             'PRIMITIVES_decoder': list(cfg.model.seq_model.PRIMITIVES_decoder),
+             'DECODERS': list(cfg.model.seq_model.DECODERS),
              'HEADs': list(cfg.model.HEADs),
              'HEADs_kwargs': heads_kwargs
              }
         )
     elif model_type == 'flat':
         net_init_kwargs = {
-            'n_cells': int(cfg.model.n_cells),
-            'n_nodes': int(cfg.model.n_nodes),
-            'n_cell_input_nodes': int(cfg.model.n_cell_input_nodes),
+            'n_cells': int(cfg.model.flat_model.n_cells),
+            'n_nodes': int(cfg.model.flat_model.n_nodes),
+            'n_cell_input_nodes': int(cfg.model.flat_model.n_cell_input_nodes),
             'd_output': d_output,
-            'backcast_loss_ration': float(cfg.model.get('backcast_loss_ration', 0.0))
+            'backcast_loss_ration': float(cfg.model.flat_model.get('backcast_loss_ration', 0.0))
         }
         cfg_model = omegaconf.OmegaConf.to_container(cfg.model, resolve=True)
         ops_kwargs = cfg_model.get('model_kwargs', {})
@@ -284,7 +249,7 @@ def main(cfg: omegaconf.DictConfig):
         net_init_kwargs.update(
             {'window_size': window_size,
              'forecasting_horizon': n_prediction_steps,
-             'PRIMITIVES_encoder': list(cfg.model.PRIMITIVES_encoder),
+             'PRIMITIVES_encoder': list(cfg.model.flat_model.PRIMITIVES_encoder),
              'HEADs': list(cfg.model.HEADs),
              'OPS_kwargs': ops_kwargs,
              'HEADs_kwargs': heads_kwargs
@@ -294,29 +259,16 @@ def main(cfg: omegaconf.DictConfig):
         if model_type == 'mixed_concat':
             d_input_future = d_input_past
         cfg_model = omegaconf.OmegaConf.to_container(cfg.model, resolve=True)
+        ops_kwargs_seq = cfg_model['seq_model'].get('ops_kwargs', {})
+        heads_kwargs_seq = cfg_model['seq_model'].get('head_kwargs', {})
 
-        ops_kwargs_seq = op_kwargs['seq_model']
-        ops_kwargs_seq.update(cfg_model['seq_model'].get('model_kwargs', {}))
-
-        #ops_kwargs_seq['mlp_mix'] = {
-        #            'forecasting_horizon': n_prediction_steps,
-        #            'window_size': window_size,
-        #        }
-        #ops_kwargs_seq['transformer'] = {
-        #    'forecasting_horizon': n_prediction_steps,
-        #    'window_size': window_size,
-        #}
-        heads_kwargs_seq = cfg_model['flat_model'].get('head_kwargs', {})
-
-        ops_kwargs_flat = op_kwargs['flat_model']
-        ops_kwargs_flat.update(cfg_model['flat_model'].get('model_kwargs', {}))
+        ops_kwargs_flat = cfg_model['flat_model'].get('ops_kwargs', {})
         heads_kwargs_flat = cfg_model['flat_model'].get('head_kwargs', {})
-
 
         net_init_kwargs = {
             'd_input_past': d_input_past,
             'd_input_future': d_input_future,
-            'd_model': int(cfg.model.seq_model.d_model) // d_model_fraction,
+            'd_model': int(cfg.model.seq_model.d_model),
             'd_output': d_output,
             'n_cells_seq': int(cfg.model.seq_model.n_cells),
             'n_nodes_seq': int(cfg.model.seq_model.n_nodes),
@@ -455,8 +407,6 @@ def main(cfg: omegaconf.DictConfig):
             update_alphas = False
 
         w_loss = trainer.train_epoch(epoch,update_alphas=update_alphas)
-        if epoch in [99]:
-            trainer.save(out_path / f'epoch_{epoch}', epoch=epoch)
         if not torch.isnan(w_loss):
             trainer.save(out_path, epoch=epoch)
 
@@ -471,7 +421,7 @@ def main(cfg: omegaconf.DictConfig):
 
     trainer.save(out_path / f"without_selection", epoch=epoch)
     if search_type == 'darts':
-        proj_path =  out_path / 'pt_project'
+        proj_path = out_path / 'pt_project'
         is_success = trainer.pt_project(cfg, proj_path)
         if not is_success:
             for i in range(5):

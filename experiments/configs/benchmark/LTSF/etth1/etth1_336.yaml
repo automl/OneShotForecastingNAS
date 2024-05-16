@@ -1,0 +1,9 @@
+defaults:
+  - /benchmark/LTSF/: etth1_base
+
+name: ETTh1_336
+external_forecast_horizon: 336
+
+dataloader:
+  search_sample_interval: 4
+

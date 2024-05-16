@@ -1,7 +1,5 @@
-import copy
 from collections.abc import Iterable
-from typing import Optional, Union
-import torch
+from typing import Union
 from torch import nn
 
 from tsf_oneshot.cells.encoders import (
@@ -109,6 +107,7 @@ class MixedFlatEncoderOps(MixedEncoderOps):
                 has_nbeats_modules = True
 
         if has_nbeats_modules:
+            # all the nbeats models share the same fc layers to reduce computation complexity
             self.nbeats_fc_layers = NBEATSModule.generate_fc_layers(feature_in=window_size,
                                                                     num_fc_layers=nbeats_model.num_fc_layers,
                                                                     width=nbeats_model.width,

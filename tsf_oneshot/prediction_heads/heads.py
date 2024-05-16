@@ -69,7 +69,6 @@ class MAEOutput(MSEOutput):
 
 
 # TODO check if it is necessary to implement add an projection layer to these heads!
-
 class FlatMSEOutput(nn.Module):
     def __init__(self, window_size: int = 0, forecasting_horizon: int = 0, back_cast_ration: float = 0.0):
         super(FlatMSEOutput, self).__init__()

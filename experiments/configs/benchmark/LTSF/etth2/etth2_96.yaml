@@ -1,0 +1,7 @@
+defaults:
+  - /benchmark/LTSF/: etth2_base
+
+name: ETTh2_96
+external_forecast_horizon: 96
+
+

@@ -1,0 +1,18 @@
+# @package benchmark
+type: LTSF
+name: ???
+search_dataset_name: ETTh2_96
+file_name: ETT-small/ETTh2.csv
+series_type: M
+freq: 1H
+external_forecast_horizon: ???
+do_normalization: true
+make_dataset_uni_variant: false
+
+dataloader:
+  batch_size: 128
+  window_size: 336
+  search_sample_interval: 1
+
+defaults:
+  - /optimizer/: optimizer2

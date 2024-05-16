@@ -11,7 +11,6 @@ import wandb
 import torch
 import numpy as np
 from matplotlib import pyplot as plt
-from torch import nn
 from tsf_oneshot.networks.sampled_net import SampledNet
 from tsf_oneshot.training.training_utils import scale_value, rescale_output
 from tsf_oneshot.training.trainer import pad_tensor
@@ -253,6 +252,9 @@ class SampledForecastingNetTrainer:
 
         # train model
         #"""
+        #n_pars = sum(p.numel() for p in self.model.parameters())
+        #print(n_pars / 1024 / 1024)
+
         self.model.train()
         for (train_X, train_y) in tqdm(self.train_loader):
             # update model weights
@@ -260,8 +262,11 @@ class SampledForecastingNetTrainer:
             torch.cuda.empty_cache()
             w_loss, _ = self.update_weights(train_X, train_y)
             torch.cuda.empty_cache()
-
-        # train_res = self.evaluate(self.train_loader, epoch, 'train')
+        #print(torch.cuda.max_memory_allocated(device=torch.device('cuda')) / 1024 / 1024)
+        #torch.cuda.empty_cache()
+        #torch.cuda.reset_peak_memory_stats(device=torch.device('cuda'))
+        #train_res = self.evaluate(self.train_loader, epoch, 'train')
+        #print(torch.cuda.max_memory_allocated(device=torch.device('cuda')) / 1024 / 1024)
 
         val_res = self.evaluate(self.val_loader, epoch, 'val')
         test_res = self.evaluate(self.test_loader, epoch, 'test')
@@ -403,7 +408,7 @@ class SampledForecastingNetTrainer:
         x_past_train_ = x_past_train.clone()
         x_future_train_ = x_future_train.clone()
         target_train_ = target_train.clone()
-        for shift in all_shift[:1]:
+        for shift in all_shift:
             x_past_train = x_past_train_[:, self.data_indices + shift]
             x_future_train = x_future_train_[:, self.target_indices + shift]
             target_train = target_train_[:, self.target_indices + shift]

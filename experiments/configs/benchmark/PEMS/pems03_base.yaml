@@ -1,0 +1,17 @@
+# @package benchmark
+type: PEMS
+name: ???
+search_dataset_name: pems03_12
+file_name: PEMS03.npz
+series_type: M
+freq: 5min
+external_forecast_horizon: ???
+do_normalization: true
+make_dataset_uni_variant: false
+
+
+dataloader:
+  batch_size: 128
+  window_size: 96
+  search_sample_interval: 1
+  num_batches_per_epoch: 1000

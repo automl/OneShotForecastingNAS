@@ -1,0 +1,8 @@
+defaults:
+  - /benchmark/LTSF/: electricity_base
+
+name: electricity_192
+external_forecast_horizon: 192
+
+dataloader:
+  search_sample_interval: 2

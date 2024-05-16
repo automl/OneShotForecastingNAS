@@ -1,4 +1,3 @@
-import numpy as np
 import os
 from pathlib import Path
 import random
@@ -10,7 +9,6 @@ import omegaconf
 import torch
 import wandb
 
-from autoPyTorch.datasets.time_series_dataset import get_lags_for_frequency
 from autoPyTorch.pipeline.components.setup.forecasting_target_scaling.utils import TargetScaler
 from datasets import get_LTSF_dataset, get_monash_dataset, get_PEMS_dataset
 from datasets.get_data_loader import get_forecasting_dataset, get_dataloader, regenerate_splits
@@ -18,7 +16,6 @@ from datasets.get_data_loader import get_forecasting_dataset, get_dataloader, re
 from tsf_oneshot.training.samplednet_trainer import SampledForecastingNetTrainer, EarlyStopping
 from tsf_oneshot.networks.sampled_net import SampledNet, SampledFlatNet, MixedParallelSampledNet, MixedConcatSampledNet
 from tsf_oneshot.training.utils import get_optimizer, get_lr_scheduler
-from tsf_oneshot.cells.operations_setting import ops_setting
 
 import torch.multiprocessing
 
@@ -107,16 +104,6 @@ def main(cfg: omegaconf.DictConfig):
     else:
         raise NotImplementedError
 
-    if dataset_name.split('_')[0] in get_LTSF_dataset.SMALL_DATASET:
-        # Smaller dataset needs smaller number of dimensions to avoids overfitting
-        d_model_fraction = 4
-        op_kwargs = ops_setting['small_dataset']
-    else:
-        d_model_fraction = 1
-        op_kwargs = ops_setting['other_dataset']
-    op_kwargs['seq_model']['general'] =op_kwargs['general']
-    op_kwargs['flat_model']['general'] = op_kwargs['general']
-
     dataset = get_forecasting_dataset(dataset_name=dataset_name, **data_info)
     dataset.lagged_value = [0]
     """
@@ -131,7 +118,6 @@ def main(cfg: omegaconf.DictConfig):
     """
 
     window_size = int(cfg.benchmark.dataloader.window_size)
-    split = [np.arange(b1, b2 - dataset.n_prediction_steps) for b1, b2 in zip(border1s, border2s)]
 
     split_ms = [
         np.arange(window_size - 1, border2s[0] - dataset.n_prediction_steps),
@@ -141,9 +127,6 @@ def main(cfg: omegaconf.DictConfig):
     split = regenerate_splits(dataset, val_share=None, splits_ms=split_ms)
     train_data_loader, val_data_loader, test_data_loader = get_dataloader(
         dataset=dataset, splits=split, batch_size=cfg.benchmark.dataloader.batch_size,
-        #num_batches_per_epoch=cfg.benchmark.dataloader.num_batches_per_epoch,
-        num_batches_per_epoch=500,
-        #num_batches_per_epoch=None,
         window_size=window_size,
         is_test_sets=[False, True, True],
         batch_size_test=128,
@@ -164,21 +147,7 @@ def main(cfg: omegaconf.DictConfig):
     window_size = (window_size - 1) // search_sample_interval + 1
     n_prediction_steps = (dataset.n_prediction_steps - 1) // search_sample_interval + 1
 
-    # TODO check what data to pass
-    #saved_data_info = torch.load(out_path / 'Model' / 'model_weights.pth')
-    dataset_name_base = dataset_name.split('_')
-    if dataset_type == 'PEMS':
-        dataset_name_base[-1] = '12'
-    else:
-        dataset_name_base[-1] = '96'
-    dataset_name = '_'.join(dataset_name_base)
-    model_path = Path(cfg.model_dir) / device / f'{dataset_type}' / dataset_name / model_name / str(seed)
-    #if not model_path.exists():
-    #    dataset_name_base = dataset_name.split('_')
-    #    dataset_name_base[-1] = '12'
-    #    dataset_name = '_'.join(dataset_name_base)
-    #    model_path = Path(cfg.model_dir) / device / f'{dataset_type}' / dataset_name / model_name / str(seed)
-
+    model_path = Path(cfg.model_dir) / device / f'{dataset_type}' / cfg.benchmark.search_dataset_name / model_name / str(seed)
     saved_data_info = torch.load(model_path / 'Model' / 'model_weights.pth')
 
     if model_type == 'seq':
@@ -213,7 +182,7 @@ def main(cfg: omegaconf.DictConfig):
             'forecasting_horizon': n_prediction_steps,
             'OPS_kwargs': ops_kwargs,
             'd_input_future': d_input_future,
-            'd_model': int(cfg.model.d_model) // d_model_fraction,
+            'd_model': int(cfg.model.d_model),
             'd_output': d_output,
             'n_cells': int(cfg.model.n_cells),
             'n_nodes': int(cfg.model.n_nodes),
@@ -289,24 +258,14 @@ def main(cfg: omegaconf.DictConfig):
             window_size = window_size_raw
             n_prediction_steps =int(dataset.n_prediction_steps)
 
-
-
         cfg_model = omegaconf.OmegaConf.to_container(cfg.model, resolve=True)
 
-        ops_kwargs_seq = op_kwargs['seq_model']
+        ops_kwargs_seq = cfg_model['seq_model'].get('ops_kwargs', {})
         ops_kwargs_seq.update(cfg_model['seq_model'].get('model_kwargs', {}))
 
-        #ops_kwargs_seq['mlp_mix'] = {
-        #            'forecasting_horizon': n_prediction_steps,
-        #            'window_size': window_size,
-        #        }
-        #ops_kwargs_seq['transformer'] = {
-        #    'forecasting_horizon': n_prediction_steps,
-        #    'window_size': window_size,
-        #}
-        heads_kwargs_seq = cfg_model['flat_model'].get('head_kwargs', {})
+        ops_kwargs_flat = cfg_model['flat_model'].get('ops_kwargs', {})
+        heads_kwargs_seq = cfg_model['seq_model'].get('head_kwargs', {})
 
-        ops_kwargs_flat = op_kwargs['flat_model']
         ops_kwargs_flat.update(cfg_model['flat_model'].get('model_kwargs', {}))
         heads_kwargs_flat = cfg_model['flat_model'].get('head_kwargs', {})
 
@@ -315,7 +274,7 @@ def main(cfg: omegaconf.DictConfig):
         net_init_kwargs = dict(d_input_past=d_input_past,
                                d_input_future=d_input_future,
                                d_output=d_output,
-                               d_model=int(cfg.model.seq_model.d_model) // d_model_fraction,
+                               d_model=int(cfg.model.seq_model.d_model),
                                n_cells_seq=int(cfg.model.seq_model.n_cells),
                                n_nodes_seq=int(cfg.model.seq_model.n_nodes),
                                n_cell_input_nodes_seq=int(cfg.model.seq_model.n_cell_input_nodes),
@@ -390,6 +349,7 @@ def main(cfg: omegaconf.DictConfig):
         do_early_stopping = early_stopping(val_res, test_res, epoch)
         if do_early_stopping:
             break
+        continue
         trainer.save(out_path, epoch=epoch)
 
         with open(out_path / 'eval_res.json', 'w') as f:
@@ -401,6 +361,7 @@ def main(cfg: omegaconf.DictConfig):
                'test': early_stopping.test_ht,
                'best_val': early_stopping.best_val_loss,
                'best_test': early_stopping.best_test_loss}
+    return
     with open(out_path / 'eval_res.json', 'w') as f:
         json.dump(res_all, f)
 

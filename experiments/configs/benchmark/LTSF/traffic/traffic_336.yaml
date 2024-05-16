@@ -1,0 +1,8 @@
+defaults:
+  - /benchmark/LTSF/: traffic_base
+
+name: traffic_336
+external_forecast_horizon: 336
+
+dataloader:
+  search_sample_interval: 4

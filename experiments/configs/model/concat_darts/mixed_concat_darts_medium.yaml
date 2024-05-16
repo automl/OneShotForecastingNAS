@@ -1,0 +1,29 @@
+defaults:
+  - /model/: mixed_concat_darts
+
+# Here we reduce the amount of parameters in the model
+seq_model:
+  d_model: 8
+
+  ops_kwargs:
+    general:
+      dropout: 0.4
+    transformer:
+      nhead: 4
+    linear_decoder:
+      with_norm: True
+
+flat_model:
+  ops_kwargs:
+    general:
+      dropout: 0.4
+
+    nbeats_g:
+      width: 96
+      thetas_dim: 48
+
+    nbeats_t:
+      width: 96
+
+    nbeats_s:
+      width: 96

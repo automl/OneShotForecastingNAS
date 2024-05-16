@@ -1,0 +1,5 @@
+defaults:
+  - /benchmark/LTSF/: weather_base
+
+name: weather_96
+external_forecast_horizon: 96

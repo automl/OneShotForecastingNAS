@@ -1,16 +1,18 @@
-""" Network architecture visualizer using graphviz """
-# https://github.com/khanrc/pt.darts/blob/master/visualize.py
+"""
+ Network architecture visualizer using graphviz
+ adapted from https://github.com/khanrc/pt.darts/blob/master/visualize.py
+"""
 import sys
 from graphviz import Digraph
 from tsf_oneshot.cells.utils import check_node_is_connected_to_out
 
 
-def plot( n_nodes: int,
-             n_input_nodes: int,
-             operations: list[int],
-             has_edges: list[bool],
-             PRIMITIVES: list[str],
-          file_path, caption=None):
+def plot(n_nodes: int,
+         n_input_nodes: int,
+         operations: list[int],
+         has_edges: list[bool],
+         PRIMITIVES: list[str],
+         file_path, caption=None):
     """ make DAG plot and save to file_path as .png """
     edge_attr = {
         'fontsize': '20',
@@ -35,7 +37,7 @@ def plot( n_nodes: int,
 
     # input nodes
     for i in range(n_input_nodes):
-        g.node(f'(in) {i}',  fillcolor='darkseagreen2')
+        g.node(f'(in) {i}', fillcolor='darkseagreen2')
 
     max_nodes = n_nodes + n_input_nodes
 
@@ -56,7 +58,7 @@ def plot( n_nodes: int,
                 else:
                     start = str(j)
                 all_edges[f'{i}<-{j}'] = (start, end, PRIMITIVES[operations[k]])
-            k+=1
+            k += 1
 
     nodes_to_remove = set(range(n_input_nodes, max_nodes - 1))
     for i in range(n_input_nodes, max_nodes - 1):
@@ -77,8 +79,6 @@ def plot( n_nodes: int,
     for edge2remove in edges_to_remove:
         all_edges.pop(edge2remove)
 
-
-
     for k, value in all_edges.items():
         g.edge(value[0], value[1], label=value[2], fillcolor="gray")
 
@@ -87,7 +87,6 @@ def plot( n_nodes: int,
         g.attr(label=caption, overlap='false', fontsize='20', fontname='times')
 
     g.render(file_path, view=True)
-
 
 
 if __name__ == '__main__':

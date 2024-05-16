@@ -1,0 +1,17 @@
+# @package _global_
+
+# optimizer for smaller network
+# The main difference is that we apply a larger weight decay value and reduce lr for hte final optimizer
+w_optimizer:
+  type: 'sgd'
+  lr: 0.025
+  weight_decay: 0.1
+  momentum: 0.9
+  nesterov: true
+
+w_optimizer_eval:
+  type: 'adamw'
+  lr: 2e-4
+  weight_decay: 0.1
+  beta1: 0.9
+  beta2: 0.999

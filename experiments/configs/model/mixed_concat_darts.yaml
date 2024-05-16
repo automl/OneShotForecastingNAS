@@ -1,3 +1,4 @@
+# @package model
 type: darts
 name: darts_mixed_concat
 model_type: mixed_concat
@@ -10,9 +11,8 @@ seq_model:
   n_cell_input_nodes: 2
   backcast_loss_ration: 0.0
   PRIMITIVES_encoder: [ 'mlp_mix','gru', 'lstm','transformer', 'tcn', 'sep_tcn','skip_connection' ]
-  # PRIMITIVES_encoder: ['transformer']
   PRIMITIVES_decoder: [ 'mlp_mix', 'gru', 'lstm', 'transformer', 'tcn', 'sep_tcn','skip_connection' ]
-  #  PRIMITIVES_decoder: ['lstm']
+  ops_kwargs: {}
   DECODERS: ['seq', 'linear']
 
 flat_model:
@@ -21,6 +21,7 @@ flat_model:
   n_cell_input_nodes: 1
   backcast_loss_ration: 0.0
   PRIMITIVES_encoder: [ 'mlp','nbeats_g','nbeats_s', 'nbeats_t', 'skip_connection' ]
+  ops_kwargs: {}
 
 HEADs: ['quantile', 'mse', 'mae' ]
 
@@ -28,4 +29,3 @@ use_second_order_grad: false
 select_with_pt: true
 proj_intv: 1
 proj_intv_nodes: 2
-

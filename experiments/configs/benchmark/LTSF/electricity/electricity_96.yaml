@@ -1,0 +1,7 @@
+defaults:
+  - /benchmark/LTSF/: electricity_base
+
+name: electricity_96
+external_forecast_horizon: 96
+
+

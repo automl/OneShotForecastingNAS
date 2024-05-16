@@ -1,0 +1,6 @@
+defaults:
+  - /benchmark/LTSF/: exchangerate_base
+
+name: exchangerate_96
+external_forecast_horizon: 96
+

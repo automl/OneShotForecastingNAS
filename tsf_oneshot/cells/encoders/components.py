@@ -5,9 +5,6 @@ import torch
 from torch import nn
 from torch.nn.utils import weight_norm
 
-from autoPyTorch.pipeline.components.setup.network_backbone.forecasting_backbone.forecasting_encoder.seq_encoder.TransformerEncoder import \
-    PositionalEncoding
-from tsf_oneshot.cells.encoders.flat_components import TSMLPBatchNormLayer
 from tsf_oneshot.cells.utils import fold_tensor, unfold_tensor, _Chomp1d
 
 TCN_DEFAULT_KERNEL_SIZE = 15
@@ -88,9 +85,11 @@ class LSTMEncoderModule(nn.Module):
 
 class TransformerEncoderModule(nn.Module):
     def __init__(self, d_model: int, window_size: int, nhead: int = 8, activation='gelu', dropout: float = 0.2,
-                 is_casual_model: bool = False, is_first_layer: bool = False, ts_skip_size: int = 1, **kwargs):
+                 is_casual_model: bool = False, is_first_layer: bool = False, ts_skip_size: int = 1, dim_feedforward: int| None = None,**kwargs):
         super(TransformerEncoderModule, self).__init__()
-        self.cell = nn.TransformerEncoderLayer(d_model, nhead=nhead, dim_feedforward=4 * d_model, batch_first=True,
+        if dim_feedforward is None:
+            dim_feedforward = 4 * d_model
+        self.cell = nn.TransformerEncoderLayer(d_model, nhead=nhead, dim_feedforward=dim_feedforward, batch_first=True,
                                                dropout=dropout,
                                                activation=activation)
         self.is_casual_model: bool = is_casual_model
@@ -103,7 +102,6 @@ class TransformerEncoderModule(nn.Module):
             self.dropout = nn.Dropout(dropout)
             nn.init.uniform_(W_pos, -0.02, 0.02)
             self.ps_encoding = nn.Parameter(W_pos, requires_grad=True)
-            # self.ps_encoding = PositionalEncoding(d_model, dropout=dropout)
 
     def forward(self, x_past: torch.Tensor, hx: Any | None = None):
         if self.is_first_layer:
@@ -133,19 +131,16 @@ class TCNEncoderModule(nn.Module):
         self.conv1 = nn.Conv1d(d_model, d_model, kernel_size,
                                stride=stride, padding=padding, dilation=dilation)
 
-        self.norm1 = nn.LayerNorm(d_model)
-        self.chomp1 = _Chomp1d(padding)
-        self.relu1 = nn.ReLU()
-        self.dropout1 = nn.Dropout(dropout)
+        norm1 = nn.LayerNorm(d_model)
+        chomp1 = _Chomp1d(padding)
+        relu1 = nn.ReLU()
+        dropout1 = nn.Dropout(dropout)
 
-        self.net = nn.Sequential(self.conv1, self.chomp1)
-        self.net_post = nn.Sequential(self.norm1, self.relu1, self.dropout1)
+        self.net = nn.Sequential(self.conv1, chomp1)
+        self.net_post = nn.Sequential(norm1, relu1, dropout1)
         self.relu = nn.ReLU()
-        self.norm = nn.LayerNorm(d_model)
 
         self.hx_encoder_layer = nn.Linear(d_model, d_model)
-        self.dropout = nn.Dropout(dropout)
-
         self.init_weights()
 
     def init_weights(self):
@@ -170,27 +165,18 @@ class SepTCNEncoderModule(TCNEncoderModule):
         padding = (kernel_size - 1) * dilation
         self.conv1 = nn.Conv1d(d_model, d_model, kernel_size,
                                stride=stride, padding=padding, dilation=dilation, groups=d_model)
-        self.norm1 = nn.LayerNorm(d_model, )
-        self.linear = nn.Linear(d_model, d_model)
-        self.linear2 = nn.Linear(d_model * 2, d_model)
-        self.chomp1 = _Chomp1d(padding)
-        self.relu1 = nn.ReLU()
-        self.dropout1 = nn.Dropout(dropout)
+        norm1 = nn.LayerNorm(d_model, )
+        linear = nn.Linear(d_model, d_model)
+        chomp1 = _Chomp1d(padding)
 
-        self.conv2 = weight_norm(nn.Conv1d(d_model, d_model, kernel_size,
-                                           stride=stride, padding=padding, dilation=dilation))
-        self.chomp2 = _Chomp1d(padding)
-        self.relu2 = nn.ReLU()
-        self.dropout2 = nn.Dropout(dropout)
+        chomp2 = _Chomp1d(padding)
+        relu2 = nn.ReLU()
+        dropout2 = nn.Dropout(dropout)
 
-        self.net = nn.Sequential(self.conv1, self.chomp1)
-        self.net_post = nn.Sequential(self.norm1, self.linear, self.relu2, self.dropout2)
-        self.relu = nn.ReLU()
-        self.norm = nn.LayerNorm(d_model)
+        self.net = nn.Sequential(self.conv1, chomp1)
+        self.net_post = nn.Sequential(norm1, linear, relu2, dropout2)
 
         self.hx_encoder_layer = nn.Linear(d_model, d_model)
-        self.dropout = nn.Dropout(dropout)
-
         self.init_weights()
 
 

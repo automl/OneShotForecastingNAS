@@ -1,0 +1,5 @@
+defaults:
+  - /benchmark/PEMS/: pems04
+
+name: pems04_96
+external_forecast_horizon: 96
