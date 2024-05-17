@@ -2,13 +2,11 @@ import copy
 import os
 import json
 from pathlib import Path
-from typing import Type
 import inspect
 
 import torch
 from torch import nn
 from tsf_oneshot.networks.components import AbstractSearchEncoder, LinearDecoder, series_decomp
-from tsf_oneshot.cells.utils import EmbeddingLayer
 from tsf_oneshot.networks.combined_net_utils import (
     get_kwargs,
     forward_concat_net,
@@ -17,9 +15,7 @@ from tsf_oneshot.networks.combined_net_utils import (
 from tsf_oneshot.cells.cells import SampledEncoderCell, SampledDecoderCell, SampledFlatEncoderCell
 from tsf_oneshot.cells.ops import PRIMITIVES_Encoder
 from tsf_oneshot.prediction_heads import PREDICTION_HEADs, FLATPREDICTION_HEADs
-from autoPyTorch.pipeline.components.setup.network_backbone.forecasting_backbone.components_util import (
-    PositionalEncoding
-)
+
 
 class SampledEncoder(AbstractSearchEncoder):
     def __init__(self,

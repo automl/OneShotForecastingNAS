@@ -1,4 +1,5 @@
 # Search for the model
+set -ex
 python train_and_eval.py +benchmark=LTSF/ettm2/ettm2_96 +model=concat_darts/mixed_concat_darts_medium
 
 #Evauate the model

@@ -1,4 +1,3 @@
-import copy
 from pathlib import Path
 from typing import Type
 import os
@@ -286,6 +285,7 @@ class SearchGDASDecoder(SearchDARTSDecoder):
                                          cell_encoder_output=cell_encoder_output, net_encoder_output=net_encoder_output)
             states = [*states[1:], cell_out]
         return cell_out
+
 
 class AbstractFlatEncoder(AbstractSearchEncoder):
     def __init__(self,

@@ -1,10 +1,5 @@
 import torch
 from torch import nn
-
-from autoPyTorch.pipeline.components.setup.network_backbone.forecasting_backbone.components_util import (
-    PositionalEncoding
-)
-
 # _Chomp1d, _TemporalBlock and _TemporalConvNet original implemented by
 # https://github.com/locuslab/TCN/blob/master/TCN/tcn.py, Carnegie Mellon University Locus Labs
 # Paper: https://arxiv.org/pdf/1803.01271.pdf

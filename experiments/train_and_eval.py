@@ -72,36 +72,16 @@ def main(cfg: omegaconf.DictConfig):
                                                                      'external_forecast_horizon', None)
                                                                  )
     elif dataset_type == 'LTSF':
-        if cfg.model.get('select_with_pt', False):
-            data_info, border2 = get_LTSF_dataset.get_train_dataset(dataset_root_path, dataset_name=dataset_name,
-                                                           file_name=cfg.benchmark.file_name,
-                                                           series_type=cfg.benchmark.series_type,
-                                                           do_normalization=cfg.benchmark.do_normalization,
-                                                           forecasting_horizon=cfg.benchmark.external_forecast_horizon,
-                                                           make_dataset_uni_variant=cfg.benchmark.get(
-                                                               "make_dataset_uni_variant", False),
-                                                           flag='train_val')
-        else:
-            data_info, border2 = get_LTSF_dataset.get_train_dataset(dataset_root_path, dataset_name=dataset_name,
-                                                           file_name=cfg.benchmark.file_name,
-                                                           series_type=cfg.benchmark.series_type,
-                                                           do_normalization=cfg.benchmark.do_normalization,
-                                                           forecasting_horizon=cfg.benchmark.external_forecast_horizon,
-                                                           make_dataset_uni_variant=cfg.benchmark.get(
-                                                               "make_dataset_uni_variant", False),
-                                                           flag='train_val')
+        data_info, border2 = get_LTSF_dataset.get_train_dataset(dataset_root_path, dataset_name=dataset_name,
+                                                       file_name=cfg.benchmark.file_name,
+                                                       series_type=cfg.benchmark.series_type,
+                                                       do_normalization=cfg.benchmark.do_normalization,
+                                                       forecasting_horizon=cfg.benchmark.external_forecast_horizon,
+                                                       make_dataset_uni_variant=cfg.benchmark.get(
+                                                           "make_dataset_uni_variant", False),
+                                                       flag='train_val')
     elif dataset_type == 'PEMS':
-        if cfg.model.get('select_with_pt', False):
-            data_info, border2 = get_PEMS_dataset.get_train_dataset(dataset_root_path, dataset_name=dataset_name,
-                                                           file_name=cfg.benchmark.file_name,
-                                                           series_type=cfg.benchmark.series_type,
-                                                           do_normalization=cfg.benchmark.do_normalization,
-                                                           forecasting_horizon=cfg.benchmark.external_forecast_horizon,
-                                                           make_dataset_uni_variant=cfg.benchmark.get(
-                                                               "make_dataset_uni_variant", False),
-                                                           flag='train_val')
-        else:
-            data_info, border2 = get_PEMS_dataset.get_train_dataset(dataset_root_path, dataset_name=dataset_name,
+        data_info, border2 = get_PEMS_dataset.get_train_dataset(dataset_root_path, dataset_name=dataset_name,
                                                            file_name=cfg.benchmark.file_name,
                                                            series_type=cfg.benchmark.series_type,
                                                            do_normalization=cfg.benchmark.do_normalization,
@@ -114,7 +94,7 @@ def main(cfg: omegaconf.DictConfig):
 
     dataset = get_forecasting_dataset(dataset_name=dataset_name, **data_info)
     # we do not need lagged value for the sake of fair comparison
-    dataset.lagged_value = [0]  #+ get_lags_for_frequency(dataset.freq, num_default_lags=1)
+    dataset.lagged_value = [0]
 
     val_share: float = cfg.val_share
 
@@ -122,15 +102,10 @@ def main(cfg: omegaconf.DictConfig):
     start_idx = window_size + max(dataset.lagged_value)
     splits_new = regenerate_splits(dataset, val_share=val_share, start_idx=start_idx, strategy='holdout')
 
-    if search_type != 'darts':
-        # for gdas, we need more iterations
-        n_epochs = int(cfg.train.n_epochs) * 2
-    else:
-        num_batches_per_epoch = cfg.benchmark.dataloader.get('num_batches_per_epoch', None)
-        n_epochs = int(cfg.train.n_epochs)
-
     batch_size = cfg.benchmark.dataloader.batch_size
     search_sample_interval = cfg.benchmark.dataloader.get('search_sample_interval', 1)
+
+    num_batches_per_epoch = cfg.benchmark.dataloader.get('num_batches_per_epoch', None)
 
     if cfg.model.get('select_with_pt', False):
         # if we would like to select architectures with perturbation: https://openreview.net/pdf?id=PKubaeJkw3
@@ -440,6 +415,8 @@ def main(cfg: omegaconf.DictConfig):
         trainer.save(out_path / f"after_op_selection", epoch=epoch)
         trainer.pt_project_topology()
         trainer.save(out_path, epoch=n_epochs - 1)
+
+    trainer.model.save_opt_arch(out_path / 'OptModel')
 
 
 if __name__ == '__main__':

@@ -155,6 +155,13 @@ class AbstractForecastingNetworkController(nn.Module):
                 mask_name, torch.zeros_like(arch_p),
             )
 
+    def get_arch_and_mask_p(self):
+        values = {arch_p_name:  getattr(self, arch_p_name) for arch_p_name in self.all_arch_p_names}
+        values.update(
+            {arch_m_name: getattr(self, arch_m_name) for arch_m_name in self.all_mask_names}
+        )
+        return values
+
     def get_all_wags(self):
         w_dag_encoder = self.get_w_dag(self.arch_p_encoder + self.mask_encoder)
         w_dag_decoder = self.get_w_dag(self.arch_p_decoder + self.mask_decoder)
@@ -299,6 +306,17 @@ class AbstractForecastingNetworkController(nn.Module):
         with open(base_path / f'meta_info.json', 'w') as f:
             json.dump(meta_info, f)
         torch.save(self.state_dict(), base_path / f'model_weights.pth')
+        # This is used to preserve the
+
+    def save_opt_arch(self, base_path: Path):
+        """
+        save the optimal architectures
+        :return:
+        """
+        if not base_path.exists():
+            os.makedirs(base_path)
+        arch_pars = self.get_arch_and_mask_p()
+        torch.save(arch_pars, base_path / f'opt_arch_weights.pth')
 
     def update_candidate_flags(self):
         i_start = 0

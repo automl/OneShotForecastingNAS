@@ -1,4 +1,5 @@
 # Search for the model
+set -ex
 python train_and_eval.py +benchmark=LTSF/electricity/electricity_96 +model=mixed_concat_darts
 
 #Evauate the model

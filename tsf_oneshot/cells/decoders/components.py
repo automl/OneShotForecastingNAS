@@ -6,7 +6,6 @@ from autoPyTorch.pipeline.components.setup.network_backbone.forecasting_backbone
 )
 import torch
 from torch import nn
-from torch.nn.utils import weight_norm
 
 from tsf_oneshot.cells.encoders.components import _Chomp1d, TCN_DEFAULT_KERNEL_SIZE
 from tsf_oneshot.cells.utils import fold_tensor, unfold_tensor

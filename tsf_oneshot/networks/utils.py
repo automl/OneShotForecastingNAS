@@ -1,7 +1,5 @@
-from functools import partial
 import torch
 from torch import nn
-from torch.nn import functional as F
 from tsf_oneshot.prediction_heads import MixedHead, MixedFlatHEADAS
 
 

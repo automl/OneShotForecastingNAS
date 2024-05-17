@@ -8,8 +8,9 @@ from autoPyTorch.data.time_series_forecasting_validator import TimeSeriesForecas
 from autoPyTorch.datasets.base_dataset import TransformSubset
 from autoPyTorch.utils.common import custom_collate_fn
 
-from autoPyTorch.pipeline.components.training.data_loader.time_series_util import PadSequenceCollector, \
-    TimeSeriesSampler
+from autoPyTorch.pipeline.components.training.data_loader.time_series_util import TimeSeriesSampler
+
+from .utils import PadSequenceCollector, TimeSeriesSampler
 
 
 def get_forecasting_dataset(n_prediction_steps,
@@ -186,8 +187,7 @@ def get_dataloader(dataset: TimeSeriesForecastingDataset,
     max_lagged_value += window_size + n_prediction_steps
 
     padding_collector = PadSequenceCollector(window_size=window_size,
-                                             sample_interval_red_seq_len=sample_interval,
-                                             sample_interval_fix_seq_len=1,
+                                             sample_interval=sample_interval,
                                              target_padding_value=padding_value,
                                              seq_max_length=max_lagged_value)
 

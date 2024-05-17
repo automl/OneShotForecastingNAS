@@ -1,7 +1,4 @@
 import pandas as pds
-from datetime import datetime
-import warnings
-import os
 import copy
 from pathlib import Path
 from .constant import VALUE_COL_NAME, TIME_COL_NAME, SEASONALITY_MAP, FREQUENCY_MAP, DATASETS
@@ -133,6 +130,7 @@ def get_train_dataset(root_path,
                       file_name: str = 'm4_hourly_dataset.tsv',
                       external_forecast_horizon: int | None = None,
                       for_validation=False,
+                      **kwargs
                       ) -> dict:
 
     dataset_path = Path(root_path) / file_name

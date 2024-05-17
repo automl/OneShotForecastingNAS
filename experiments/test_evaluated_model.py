@@ -148,7 +148,13 @@ def main(cfg: omegaconf.DictConfig):
     n_prediction_steps = (dataset.n_prediction_steps - 1) // search_sample_interval + 1
 
     model_path = Path(cfg.model_dir) / device / f'{dataset_type}' / cfg.benchmark.search_dataset_name / model_name / str(seed)
-    saved_data_info = torch.load(model_path / 'Model' / 'model_weights.pth')
+    if (model_path / 'OptModel' / f'opt_arch_weights.pth').exists():
+        saved_data_info = torch.load(model_path / 'OptModel' / f'opt_arch_weights.pth')
+    elif (model_path / 'Model' / 'model_weights.pth').exists():
+        saved_data_info = torch.load(model_path / 'Model' / 'model_weights.pth')
+    else:
+        raise ValueError('No optimal model is found. Please ensure that you have call train_and_eval to search for the '
+                         'optimal architectures!')
 
     if model_type == 'seq':
         operations_encoder, has_edges_encoder = get_optimized_archs(saved_data_info, 'arch_p_encoder', 'mask_encoder')
@@ -349,7 +355,6 @@ def main(cfg: omegaconf.DictConfig):
         do_early_stopping = early_stopping(val_res, test_res, epoch)
         if do_early_stopping:
             break
-        continue
         trainer.save(out_path, epoch=epoch)
 
         with open(out_path / 'eval_res.json', 'w') as f:
@@ -361,7 +366,6 @@ def main(cfg: omegaconf.DictConfig):
                'test': early_stopping.test_ht,
                'best_val': early_stopping.best_val_loss,
                'best_test': early_stopping.best_test_loss}
-    return
     with open(out_path / 'eval_res.json', 'w') as f:
         json.dump(res_all, f)
 

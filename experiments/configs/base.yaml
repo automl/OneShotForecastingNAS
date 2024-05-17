@@ -1,16 +1,15 @@
 seed: 3
 
 benchmark:
-  dataset_root: "/phys/ssd2/TSF_DATA/"
+  dataset_root: ??? # Update this to the path to your own repository
   type: ???
   name: ???
-  search_dataset_name: ???  # This value is used to help the model to locate the searched architectures
+  search_dataset_name: ???
   file_name: ???
   series_type: ???
   freq: ???
   external_forecast_horizon: ???
   do_normalization: ???
-  metric: mean_MASE_forecasting
 
 
 model:
@@ -31,7 +30,7 @@ model:
 
 val_share: 0.5
 
-model_dir: /phys/ssd2/TSF_OneShot/res/models/
+model_dir: ??? # Update this to the path to store your model
 
 train:
   n_epochs: 40
@@ -82,5 +81,5 @@ wandb:
   name: ${model.type}_${model.model_type}_${model.grad_order}
   group: ${benchmark.name}
   project: OneShotForecasting
-  entity: ddeng
+  entity: abc
   mode: disabled

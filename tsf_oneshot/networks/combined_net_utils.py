@@ -1,4 +1,5 @@
 import inspect
+from  typing import Callable
 
 import torch
 from torch import nn
@@ -48,6 +49,17 @@ def add_outputs(input1: list | torch.Tensor, input2: list | torch.Tensor, weight
         raise NotImplementedError
 
 
+def decompose_input_variables(x: torch.Tensor, n_vars:int, decompose: Callable) -> list[torch.Tensor]:
+    x_variables = x[:, :, :n_vars]
+    seasonal, trend = decompose(x_variables)
+
+    x = [
+        torch.cat([trend, x[:, :, n_vars:]], -1),
+        torch.cat([seasonal, x[:, :, n_vars:]], -1),
+    ]
+    return x
+
+
 def forward_parallel_net(flat_net: nn.Module,
                          seq_net: nn.Module,
                          x_past: torch.Tensor,
@@ -58,16 +70,11 @@ def forward_parallel_net(flat_net: nn.Module,
                          seq_kwargs: dict = {},
                          flat_kwargs: dict = {},
                          out_weights: torch.Tensor | None = None):
+
     flat_out = flat_net(x_past, x_future, **flat_kwargs)
 
     n_vars = flat_out[-1].shape[-1]
-    past_targets = x_past[:, :, :n_vars]
-    seasonal_init, trend_init = decompose(past_targets)
-
-    x_past = [
-        torch.cat([trend_init, x_past[:, :, n_vars:]], -1),
-        torch.cat([seasonal_init, x_past[:, :, n_vars:]], -1),
-    ]
+    x_past = decompose_input_variables(x_past, n_vars, decompose)
 
     seq_out = seq_net(x_past, x_future, **seq_kwargs)
 
@@ -94,22 +101,15 @@ def forward_concat_net(flat_net: nn.Module,
     # x_past contains two values, the first one is from the raw data, the second one is from the decoder architecture
     # HERE we have x past as the first item and backcast_flat_out as the second input
     n_vars = backcast_flat_out.shape[-1]
-    past_targets = x_past[:, :, :n_vars]
-    seasonal_init, trend_init = decompose(past_targets)
 
-    x_past = [
-        torch.cat([trend_init, x_past[:, :, n_vars:]], -1),
-        torch.cat([seasonal_init, x_past[:, :, n_vars:]], -1),
-    ]
-    # """
+    x_past = decompose_input_variables(x_past, n_vars, decompose)
+
     seasonal_future, trend_future = decompose(forecast_flat_out)
 
     x_future = [
         torch.cat([trend_future, x_future], dim=-1),
         torch.cat([seasonal_future, x_future], dim=-1)
     ]
-    # """
-    # x_future = torch.cat([forecast_flat_out, x_future], dim=-1)
 
     seq_out = seq_net(x_past, x_future, **seq_kwargs)
 

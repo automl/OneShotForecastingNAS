@@ -7,7 +7,6 @@ import numpy as np
 import os
 
 from sklearn.preprocessing import StandardScaler
-import warnings
 
 LARGE_DATASET = ['pems03', 'pems04', 'pems07', 'pems08']
 

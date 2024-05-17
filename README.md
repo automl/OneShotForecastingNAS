@@ -1,23 +1,20 @@
-# Owner avatar
+# Optimizing Time Series Forecasting Architectures: A Hierarchical Neural Architecture Search Approach
+This repository contains all the codes required to reproduce the result of the paper: 
+Optimizing Time Series Forecasting Architectures: A Hierarchical Neural Architecture Search Approach
 
 
-
-## Installation
+## Usage
+The dataset can be downloaded from https://github.com/thuml/Time-Series-Library?tab=readme-ov-file#usage
+And you need to update the path to store the data and model under `experiments/configs/base.yaml`
 ```
-git clone https://github.com/automl-private/Owner avatar.git
-cd Owner avatar
-conda create -n OneShotForecastingNAS  python=3.8
-conda activate OneShotForecastingNAS 
-
-# Install for usage
-pip install .
-
-# Install for development
-make install-dev
+pip install -r requirements.txt
+export PYTHONPATH="${PYTHONPATH}:${PWD}"
 ```
 
 ## Minimal Example
 
 ```
-# Your code here
+cd experiments 
+bash scripts/LTSF/etth1.sh
+
 ```
