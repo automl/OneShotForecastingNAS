@@ -68,8 +68,8 @@ def main(cfg: omegaconf.DictConfig):
                )
 
     out_path = Path(cfg.model_dir) / device / f'{dataset_type}' / dataset_name / model_name / str(seed)
-    if not out_path.exists():
-        os.makedirs(out_path, exist_ok=True)
+    #if not out_path.exists():
+    #    os.makedirs(out_path, exist_ok=True)
 
     if dataset_type == 'monash':
         data_info, y_test = get_monash_dataset.get_train_dataset(dataset_root_path,

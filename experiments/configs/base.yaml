@@ -30,7 +30,7 @@ model:
 
 val_share: 0.5
 
-model_dir: ??? # Update this to the path to store your model
+model_dir: ${hydra:runtime.cwd}/ModelWeights # Update this to the path to store your model
 
 train:
   n_epochs: 40

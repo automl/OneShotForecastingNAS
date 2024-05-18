@@ -16,3 +16,9 @@ We provide an example script showing how to search for the optimal architectures
 cd experiments 
 bash scripts/LTSF/etth1.sh
 ```
+We store the optimal architectures under `experiments/ModelWeights` 
+Therefore, you could directly evaluate the optimal architectures with the model found by our optimizer:
+```
+cd experiments
+python test_evaluated_model.py +benchmark=LTSF/etth1/etth1_96 +model=mixed_concat_darts seed=0
+```
