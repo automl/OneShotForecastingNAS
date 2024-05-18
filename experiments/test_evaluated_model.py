@@ -141,8 +141,9 @@ def main(cfg: omegaconf.DictConfig):
     d_output = dataset.num_targets
 
     # This value is used to initialize the networks
-    search_sample_interval = cfg.benchmark.dataloader.get('search_sample_interval', 1)
-    #search_sample_interval = 1
+    # search_sample_interval = cfg.benchmark.dataloader.get('search_sample_interval', 1)
+    # sample_interval is no longer required
+    search_sample_interval = 1
     window_size_raw = window_size
     window_size = (window_size - 1) // search_sample_interval + 1
     n_prediction_steps = (dataset.n_prediction_steps - 1) // search_sample_interval + 1
