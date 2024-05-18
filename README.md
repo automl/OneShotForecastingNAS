@@ -5,7 +5,7 @@ Optimizing Time Series Forecasting Architectures: A Hierarchical Neural Architec
 
 ## Usage
 We tested our codes with `python==3.11`
-The dataset can be downloaded from https://github.com/thuml/Time-Series-Library?tab=readme-ov-file#usage
+The dataset can be downloaded from https://github.com/thuml/iTransformer?tab=readme-ov-file#usage
 And you need to update the path to store the data and model under `experiments/configs/base.yaml`
 ```
 pip install -r requirements.txt
