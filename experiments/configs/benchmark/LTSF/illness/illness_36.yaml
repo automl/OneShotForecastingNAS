@@ -1,6 +1,0 @@
-defaults:
-  - /benchmark/LTSF/: illness_base
-
-name: illness_36
-external_forecast_horizon: 36
-
