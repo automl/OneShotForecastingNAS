@@ -11,10 +11,8 @@ pip install -r requirements.txt
 export PYTHONPATH="${PYTHONPATH}:${PWD}"
 ```
 
-## Minimal Example
-
+We provide an example script showing how to search for the optimal architectures and evaluate the optimal architectures
 ```
 cd experiments 
 bash scripts/LTSF/etth1.sh
-
 ```

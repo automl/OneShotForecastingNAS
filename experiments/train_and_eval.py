@@ -375,6 +375,8 @@ def main(cfg: omegaconf.DictConfig):
                                    a_optimizer=a_optimizer, lr_scheduler_w=lr_scheduler)
     start_optimize_alpha = int(cfg.get('start_optimize_alpha', 0))
 
+    n_epochs = int(cfg.train.n_epochs)
+
     for epoch in range(epoch_start, n_epochs):
         if epoch >= start_optimize_alpha:
             update_alphas = True
