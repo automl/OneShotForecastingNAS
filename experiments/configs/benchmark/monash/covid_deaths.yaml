@@ -1,6 +1,0 @@
-type: monash
-name: covid_deaths
-file_name: covid_deaths_dataset.tsf
-external_forecast_horizon: 30
-integer_conversion: true
-metric: mean_MASE_forecasting

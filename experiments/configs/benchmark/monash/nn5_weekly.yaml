@@ -1,6 +1,0 @@
-type: monash
-name: nn5_weekly
-file_name: nn5_weekly_dataset.tsf
-external_forecast_horizon: 8
-integer_conversion: false
-metric: mean_MASE_forecasting

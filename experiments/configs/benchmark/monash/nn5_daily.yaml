@@ -1,6 +1,0 @@
-type: monash
-name: nn5_daily
-file_name: nn5_daily_dataset_without_missing_values.tsf
-external_forecast_horizon: null
-integer_conversion: false
-metric: mean_MASE_forecasting

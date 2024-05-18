@@ -1,6 +1,0 @@
-type: monash
-name: traffic_hourly
-file_name: traffic_hourly_dataset.tsf
-external_forecast_horizon: 168
-integer_conversion: false
-metric: mean_MASE_forecasting

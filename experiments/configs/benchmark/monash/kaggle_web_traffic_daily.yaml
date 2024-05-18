@@ -1,6 +1,0 @@
-type: monash
-name: kaggle_web_traffic_daily
-file_name: kaggle_web_traffic_dataset_without_missing_values.tsf
-external_forecast_horizon: 59
-integer_conversion: true
-metric: mean_MASE_forecasting

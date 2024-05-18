@@ -1,6 +1,0 @@
-type: monash
-name: m4_monthly
-file_name: m4_monthly_dataset.tsf
-external_forecast_horizon: null
-integer_conversion: false
-metric: mean_MASE_forecasting

@@ -1,6 +1,0 @@
-type: monash
-name: kdd_cup
-file_name: kdd_cup_2018_dataset_without_missing_values.tsf
-external_forecast_horizon: 168
-integer_conversion: false
-metric: mean_MASE_forecasting

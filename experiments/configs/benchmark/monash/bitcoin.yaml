@@ -1,6 +1,0 @@
-type: monash
-name: bitcoin
-file_name: bitcoin_dataset_without_missing_values.tsf
-external_forecast_horizon: 30
-integer_conversion: false
-metric: mean_MASE_forecasting

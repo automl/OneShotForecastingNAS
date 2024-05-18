@@ -1,6 +1,0 @@
-type: monash
-name: sunspot
-file_name: sunspot_dataset_without_missing_values.tsf
-external_forecast_horizon: 30
-integer_conversion: true
-metric: mean_MASE_forecasting

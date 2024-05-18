@@ -1,6 +1,0 @@
-type: monash
-name: solar_weekly
-file_name: solar_weekly_dataset.tsf
-external_forecast_horizon: 5
-integer_conversion: false
-metric: mean_MASE_forecasting

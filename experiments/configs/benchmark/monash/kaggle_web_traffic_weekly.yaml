@@ -1,6 +1,0 @@
-type: monash
-name: kaggle_web_traffic_weekly
-file_name: kaggle_web_traffic_weekly_dataset.tsf
-external_forecast_horizon: 8
-integer_conversion: true
-metric: mean_MASE_forecasting

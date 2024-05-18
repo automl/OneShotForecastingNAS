@@ -1,6 +1,0 @@
-type: monash
-name: aus_elecdemand
-file_name: australian_electricity_demand_dataset.tsf
-external_forecast_horizon: 336
-integer_conversion: false
-metric: mean_MASE_forecasting
