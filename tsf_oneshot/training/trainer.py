@@ -230,24 +230,6 @@ class ForecastingTrainer:
                 torch.cuda.empty_cache()
                 self.update_alphas(val_X, val_y)
 
-            """
-            w_loss, prediction_train = self.update_weights(train_X, train_y)
-            a_loss, prediction_val = self.update_alphas(val_X, val_y)
-
-            from functools import partial
-
-            kwargs = {
-                'train_X': train_X,
-                'target_train': train_y['future_targets'].float(),
-                'prediction_train': prediction_train,
-                'val_X': val_X,
-                'target_val': val_y['future_targets'].float(),
-                'prediction_val': prediction_val,
-            }
-            func = partial(save_images, kwargs=kwargs)
-            import pdb
-            pdb.set_trace()
-            #"""
         if self.lr_scheduler_w is not None and self.lr_scheduler_w_type == LR_SCHEDULER_TYPE.epoch:
             self.lr_scheduler_w.step()
         if self.lr_scheduler_a is not None and self.lr_scheduler_a_type == LR_SCHEDULER_TYPE.epoch:
@@ -260,9 +242,6 @@ class ForecastingTrainer:
         target_train = train_y['future_targets'].float().to(self.device)
 
         shift = np.random.choice(self.sample_interval)
-        #x_past_train_ = x_past_train.clone()
-        #x_future_train_ = x_future_train.clone()
-        #target_train_ = target_train.clone()
 
         x_past_train = x_past_train[:, self.data_indices + shift]
         x_future_train = x_future_train[:, self.target_indices + shift]
@@ -620,7 +599,6 @@ class ForecastingDARTSSecondOrderTrainer(ForecastingTrainer):
         super(ForecastingDARTSSecondOrderTrainer, self).__init__(model=model, **kwargs)
         self.architect = architect
         if lr_init is None and kwargs['lr_scheduler_w'] is None:
-            # TODO check if amp works on this type of architect
             raise ValueError("either lr_scheduler_w or lr_init must be given")
         self.lr_init = lr_init
 

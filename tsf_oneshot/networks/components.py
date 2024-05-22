@@ -104,8 +104,6 @@ class AbstractSearchEncoder(nn.Module):
 
         self.num_edges = num_edges
 
-        # self.arch_parameters = nn.Parameter(1e-3 * torch.randn(num_edges, len(PRIMITIVES)))
-
         self._device = torch.device('cpu')
 
     @staticmethod
@@ -385,19 +383,6 @@ class SearchDARTSFlatEncoder(AbstractFlatEncoder):
             [past_targets, future_targets], dim=-1
         )
         states = [embedding]
-        """
-        seasonal_init, trend_init = self.decompsition(x)
-        # This result in a feature map of size [B*N, L, 1]
-        #past_targets = torch.transpose(x_past, -1, -2)
-        x_s = torch.transpose(seasonal_init, -1, -2)
-        x_t = torch.transpose(trend_init, -1, -2)
-        future_targets = torch.zeros([*x_s.shape[:-1], self.forecasting_horizon], device=x_s.device,
-                                     dtype=x_s.dtype)
-        embedding_s = torch.cat([x_s, future_targets], dim=-1)
-        embedding_t = torch.cat([x_t, future_targets], dim=-1)
-
-        states = [embedding_s, embedding_t]
-        #"""
 
         cell_out = self.cells_forward(states, w_dag)
         cell_out = cell_out.transpose(-1, -2)

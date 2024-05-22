@@ -106,16 +106,6 @@ def main(cfg: omegaconf.DictConfig):
 
     dataset = get_forecasting_dataset(dataset_name=dataset_name, **data_info)
     dataset.lagged_value = [0]
-    """
-    if dataset.freq == '1H' and dataset.n_prediction_steps > 168:
-        base_window_size = int(168 * cfg.dataloader.window_size_coefficient)
-    else:
-        if cfg.benchmark.get('base_window_size', None) is None:
-            base_window_size = int(np.ceil(dataset.base_window_size))
-        else:
-            base_window_size = cfg.benchmark.base_window_size
-    window_size = int(base_window_size * cfg.dataloader.window_size_coefficient)
-    """
 
     window_size = int(cfg.benchmark.dataloader.window_size)
 

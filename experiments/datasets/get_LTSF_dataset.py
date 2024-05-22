@@ -181,22 +181,4 @@ def get_test_dataset(root_path,
     }
 
     return dataset_info, border2, len(data) - forecasting_horizon, (border1s, border2s)
-    """
-    for idx in range(border2, len(data) - forecasting_horizon):
-        Y = data[: idx]
-        start_time = pd.to_datetime(df_raw['date'][0])
-        if make_dataset_uni_variant:
-            Y = Y.transpose()
-            start_times = [start_time for _ in range(len(Y))]
-        else:
-            Y = [Y]
-            start_times = [start_time]
-        dataset_info = {
-            'X_test': None,
-            'past_targets': Y,
-            'future_targets': None,
-            'start_times': start_times,
-        }
-        yield dataset_info
-    """
 

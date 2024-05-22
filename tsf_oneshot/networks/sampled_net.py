@@ -43,8 +43,6 @@ class SampledEncoder(AbstractSearchEncoder):
         self.OPS_kwargs = OPS_kwargs
         self.n_cell_input_nodes = n_cell_input_nodes
 
-        # self.embedding_layer = nn.Linear(d_input, d_model, bias=True)
-
         cells = []
         num_edges = None
         edge2index = None
@@ -306,7 +304,6 @@ class SampledNet(nn.Module):
         assert len(param_dict.keys() - union_params) == 0, \
             "parameters %s were not separated into either decay/no_decay set!" \
             % (str(param_dict.keys() - union_params),)
-        # TODO rewrite this function!!
         # create the pytorch optimizer object
         optim_groups = [
             {"params": [param_dict[pn] for pn in sorted(list(decay)) if pn in param_dict],

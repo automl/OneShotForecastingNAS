@@ -235,15 +235,6 @@ class SampledForecastingNetTrainer:
                                                                                           self.n_prediction_steps,
                                                                                           self.lagged_values,
                                                                                           self.cached_lag_mask_decoder)
-        """
-        if future_features is not None:
-            future_features = future_features.to(self.device)
-            x_future = torch.cat(
-                [future_features, truncated_decoder_targets], dim=-1
-            )
-        else:
-            x_future = truncated_decoder_targets
-        """
         x_future = future_features.to(self.device)
 
         return x_past, x_future, (loc, scale)
@@ -251,9 +242,6 @@ class SampledForecastingNetTrainer:
     def train_epoch(self, epoch: int):
 
         # train model
-        #"""
-        #n_pars = sum(p.numel() for p in self.model.parameters())
-        #print(n_pars / 1024 / 1024)
 
         self.model.train()
         for (train_X, train_y) in tqdm(self.train_loader):
@@ -262,11 +250,6 @@ class SampledForecastingNetTrainer:
             torch.cuda.empty_cache()
             w_loss, _ = self.update_weights(train_X, train_y)
             torch.cuda.empty_cache()
-        #print(torch.cuda.max_memory_allocated(device=torch.device('cuda')) / 1024 / 1024)
-        #torch.cuda.empty_cache()
-        #torch.cuda.reset_peak_memory_stats(device=torch.device('cuda'))
-        #train_res = self.evaluate(self.train_loader, epoch, 'train')
-        #print(torch.cuda.max_memory_allocated(device=torch.device('cuda')) / 1024 / 1024)
 
         val_res = self.evaluate(self.val_loader, epoch, 'val')
         test_res = self.evaluate(self.test_loader, epoch, 'test')
@@ -275,9 +258,6 @@ class SampledForecastingNetTrainer:
             self.lr_scheduler_w.step()
 
         return val_res, test_res
-        #"""
-
-        #self.evaluate_with_plot()
 
     def evaluate(self, test_loader, epoch, loader_type: str = 'test'):
         mse_losses = []
@@ -324,81 +304,6 @@ class SampledForecastingNetTrainer:
             'MSE loss': mean_mse_loses,
             'MAE loss': mean_mae_losses
         }
-
-    def evaluate_with_plot(self):
-        self.model.eval()
-        for (test_X, test_y) in tqdm(self.test_loader):
-            x_past_test, x_future_test, scale_value_test = self.preprocessing(test_X)
-            target_test = test_y['future_targets'].float()
-            n_data = len(target_test)
-
-            pred_test = torch.zeros_like(target_test)
-            for shift in range(self.sample_interval):
-                x_past_test_ = x_past_test[:, self.data_indices + shift]
-                x_future_test_ = x_future_test[:, self.target_indices + shift]
-
-                with torch.no_grad():
-                    prediction_test = self.model(x_past_test_, x_future_test_)
-                    prediction_test = self.model.get_inference_prediction(prediction_test)
-                    prediction_test = rescale_output(prediction_test, *scale_value_test, device=self.device).cpu()
-                    pred_test[:, self.target_indices + shift] = prediction_test
-
-            diff_test = (pred_test - target_test)
-
-            train_X, train_y = next(iter(self.train_loader))
-            x_past_train, x_future_train, scale_value_train = self.preprocessing(train_X)
-            target_train = train_y['future_targets'].float()
-
-            pred_train = torch.zeros_like(target_train)
-            for shift in range(self.sample_interval):
-                x_past_train_ = x_past_train[:, self.data_indices + shift]
-                x_future_train_ = x_future_train[:, self.target_indices + shift]
-
-                with torch.no_grad():
-                    prediction_train = self.model(x_past_train_, x_future_train_)
-                    prediction_train = self.model.get_inference_prediction(prediction_train)
-                    prediction_train = rescale_output(prediction_train, *scale_value_train, device=self.device).cpu()
-                    pred_train[:, self.target_indices + shift] = prediction_train
-            diff_train = (target_train - pred_train)
-
-            val_X, val_y = next(iter(self.val_loader))
-            x_past_val, x_future_val, scale_value_val = self.preprocessing(val_X)
-            target_val = val_y['future_targets'].float()
-            pred_val = torch.zeros_like(target_val)
-
-            for shift in range(self.sample_interval):
-                x_past_val_ = x_past_val[:, self.data_indices + shift]
-                x_future_val_ = x_future_val[:, self.target_indices + shift]
-                with torch.no_grad():
-                    prediction_val = self.model(x_past_val_, x_future_val_)
-                    prediction_val = self.model.get_inference_prediction(prediction_val)
-                    prediction_val = rescale_output(prediction_val, *scale_value_val, device=self.device).cpu()
-                    pred_val[:, self.target_indices + shift] = prediction_val
-
-            diff_val = (target_val - pred_val)
-
-            from functools import partial
-
-            kwargs = {
-                'train_X': train_X,
-                'target_train': train_y['future_targets'].float(),
-                'prediction_train': pred_train,
-                'val_X': val_X,
-                'target_val': val_y['future_targets'].float(),
-                'prediction_val': pred_val,
-                'test_X': test_X,
-                'target_test': test_y['future_targets'].float(),
-                'prediction_test': pred_test,
-
-            }
-            func = partial(save_images, interval=self.sample_interval, kwargs=kwargs)
-            for i in range(8):
-                func(2,0,i)
-            func(2,0,None)
-
-
-            import pdb
-            pdb.set_trace()
 
     def update_weights(self, train_X, train_y):
         x_past_train, x_future_train, scale_value_train = self.preprocessing(train_X)

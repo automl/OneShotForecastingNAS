@@ -72,7 +72,6 @@ class AbstractSearchEncoderCell(nn.Module):
                 is_first_layer = cell_idx == 0 and i == n_input_nodes
 
                 dilation = int(2 ** max((j - self.n_input_nodes + cell_idx), 0))
-                #dilation = int(2 ** cell_idx) if cell_idx % 2 == 0 else 1
                 node_str = f"{i}<-{j}"
                 ops_kwargs_general = dict(ts_skip_size=1,
                                           dilation=dilation,

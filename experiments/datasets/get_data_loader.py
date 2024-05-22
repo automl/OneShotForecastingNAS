@@ -144,12 +144,6 @@ def get_dataset_sampler(dataset: TimeSeriesForecastingDataset,
         seq_idx_inactivate = np.random.choice(seq_idx_inactivate, len(seq_idx_inactivate) - 1, replace=False)
     # this budget will reduce the number of samples inside each sequence, e.g., the samples becomes more sparse
     min_start = 0
-    """
-    num_instances_per_seqs = np.ceil(
-        np.ceil(num_instances_train / (num_instances_dataset - min_start) * seq_train_length) *
-        fraction_samples_per_seq
-    )
-    """
     if sample_strategy == 'LengthUniform':
         available_seq_length = seq_length - min_start
         available_seq_length = np.where(available_seq_length <= 1, 1, available_seq_length)

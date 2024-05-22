@@ -168,7 +168,6 @@ class SepTCNEncoderModule(TCNEncoderModule):
         linear = nn.Linear(d_model, d_model)
         chomp1 = _Chomp1d(padding)
 
-        chomp2 = _Chomp1d(padding)
         relu2 = nn.ReLU()
         dropout2 = nn.Dropout(dropout)
 
@@ -193,7 +192,6 @@ class MLPMixEncoderModule(nn.Module):
             nn.Dropout(dropout)
         )
         self.time_norm = nn.LayerNorm(d_model)
-        # self.time_norm = nn.LayerNorm(d_model)
 
         if d_ff is None:
             d_ff = d_model * 2
@@ -207,7 +205,6 @@ class MLPMixEncoderModule(nn.Module):
         )
         self.dropout2 = nn.Dropout(dropout)
         self.feature_norm = nn.LayerNorm(d_model)
-        # self.feature_norm = nn.LayerNorm(d_model)
         self.hx_encoder_layer = nn.Linear(d_model, d_model)
 
     def forward(self, x_past: torch.Tensor, hx: Any | None = None):
@@ -221,7 +218,6 @@ class MLPMixEncoderModule(nn.Module):
         input_f = input_f + x_past
 
         input_f = unfold_tensor(input_f, self.ts_skip_size, size_info)
-        input_f_shape = input_f.shape
         input_f = self.feature_norm(input_f)
         out_f = self.feature_mixer(input_f)
         out = out_f + input_f
