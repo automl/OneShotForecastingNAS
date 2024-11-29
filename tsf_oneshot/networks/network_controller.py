@@ -160,6 +160,7 @@ class AbstractForecastingNetworkController(nn.Module):
         values.update(
             {arch_m_name: getattr(self, arch_m_name) for arch_m_name in self.all_mask_names}
         )
+        values['arch_p_nets'] = self.arch_p_nets
         return values
 
     def get_all_wags(self):
