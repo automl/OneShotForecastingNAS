@@ -158,7 +158,11 @@ def main(cfg: omegaconf.DictConfig):
 
     if model_type == 'seq':
         operations_encoder, has_edges_encoder = get_optimized_archs(saved_data_info, 'arch_p_encoder', 'mask_encoder')
-        operations_decoder, has_edges_decoder = get_optimized_archs(saved_data_info, 'arch_p_decoder', 'mask_decoder')
+        try:
+            operations_decoder, has_edges_decoder = get_optimized_archs(saved_data_info, 'arch_p_decoder', 'mask_decoder')
+        except Exception:
+            operations_decoder = operations_encoder
+            has_edges_decoder = has_edges_encoder
         decoder_choice, _ = get_optimized_archs(saved_data_info, 'arch_p_decoder_choices', 'mask_decoder_choices')
         head_idx, _ = get_optimized_archs(saved_data_info, 'arch_p_heads', 'mask_heads')
 
@@ -239,9 +243,13 @@ def main(cfg: omegaconf.DictConfig):
         operations_encoder_seq, has_edges_encoder_seq = get_optimized_archs(
             saved_data_info, 'arch_p_encoder_seq', 'mask_encoder_seq'
         )
-        operations_decoder_seq, has_edges_decoder_seq = get_optimized_archs(
-            saved_data_info, 'arch_p_decoder_seq', 'mask_decoder_seq'
-        )
+        try:
+            operations_decoder_seq, has_edges_decoder_seq = get_optimized_archs(
+                saved_data_info, 'arch_p_decoder_seq', 'mask_decoder_seq'
+            )
+        except Exception:
+            operations_decoder_seq = operations_encoder_seq
+            has_edges_decoder_seq = has_edges_encoder_seq
         operations_encoder_flat, has_edges_encoder_flat = get_optimized_archs(
             saved_data_info, 'arch_p_encoder_flat', 'mask_encoder_flat'
         )

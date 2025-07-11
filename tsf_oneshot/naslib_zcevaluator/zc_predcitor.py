@@ -1,0 +1,64 @@
+"""
+This contains implementations of:
+synflow, grad_norm, fisher, and grasp, and variants of jacov and snip
+based on https://github.com/mohsaied/zero-cost-nas
+The current file is implemented from naslib:
+https://github.com/automl/NASLib/blob/zerocost/naslib/predictors/zerocost.py
+"""
+import torch
+import numpy as np
+import logging
+import math
+
+from tsf_oneshot.naslib_zcevaluator.predictor import Predictor
+from tsf_oneshot.naslib_zcevaluator.pruners import predictive
+
+from tsf_oneshot.training.utils import ForecastingPreprocessor
+
+logger = logging.getLogger(__name__)
+
+
+class ZeroCost(Predictor):
+    def __init__(self, method_type="jacov",):
+        # available zero-cost method types: 'jacov', 'snip', 'synflow', 'grad_norm', 'fisher', 'grasp'
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+        self.method_type = method_type
+        self.dataload = "random"
+        self.num_imgs_or_batches = 1
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    def query_batch(self, graphs, dataloader):
+        scores = []
+
+        for graph in graphs:
+            score = self.query(graph, dataloader)
+            scores.append(score)
+
+        return np.array(scores)
+
+    def query(self, graph, dataloader, preprocessor: ForecastingPreprocessor,):
+        loss_fn = graph.get_loss_fn()
+
+        n_classes = graph.num_classes
+        score = predictive.find_measures(
+                net_orig=graph.to(self.device),
+                dataloader=dataloader,
+                dataload_info=(self.dataload, self.num_imgs_or_batches, n_classes),
+                preprocessor=preprocessor,
+                device=self.device,
+                loss_fn=loss_fn,
+                measure_names=[self.method_type],
+            )
+
+        if math.isnan(score) or math.isinf(score):
+            score = -1e8
+
+        if self.method_type == 'synflow':
+            if score == 0.:
+                return score
+
+            score = math.log(score) if score > 0 else -math.log(-score)
+
+        return score

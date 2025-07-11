@@ -25,7 +25,7 @@ from torch import nn
 import torch
 import numpy as np
 from tsf_oneshot.training.training_utils import scale_value, rescale_output
-from tsf_oneshot.training.utils import get_optimizer, LR_SCHEDULER_TYPE
+from tsf_oneshot.training.utils import get_optimizer, LR_SCHEDULER_TYPE, pad_tensor
 
 
 def save_images(batch_idx, var_idx, kwargs):
@@ -68,26 +68,6 @@ def save_images(batch_idx, var_idx, kwargs):
     ax[1].legend()
     ax[1].set_title('val')
     fig.savefig(f'train_val{i}_batch_{batch_idx}_var_{var_idx}.png')
-
-
-def pad_tensor(tensor_to_be_padded: torch.Tensor, target_length: int) -> torch.Tensor:
-    """
-    pad tensor to meet the required length
-
-    Args:
-         tensor_to_be_padded (torch.Tensor)
-            tensor to be padded
-         target_length  (int):
-            target length
-
-    Return:
-        torch.Tensor:
-            padded tensors
-    """
-    tensor_shape = tensor_to_be_padded.shape
-    padding_size = [tensor_shape[0], target_length - tensor_shape[1], tensor_shape[-1]]
-    tensor_to_be_padded = torch.cat([tensor_to_be_padded.new_zeros(padding_size), tensor_to_be_padded], dim=1)
-    return tensor_to_be_padded
 
 
 class ForecastingTrainer:

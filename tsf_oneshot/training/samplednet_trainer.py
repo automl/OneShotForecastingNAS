@@ -12,9 +12,9 @@ import torch
 import numpy as np
 from matplotlib import pyplot as plt
 from tsf_oneshot.networks.sampled_net import SampledNet
+
 from tsf_oneshot.training.training_utils import scale_value, rescale_output
-from tsf_oneshot.training.trainer import pad_tensor
-from tsf_oneshot.training.utils import LR_SCHEDULER_TYPE
+from tsf_oneshot.training.utils import LR_SCHEDULER_TYPE, pad_tensor, ForecastingPreprocessor
 
 
 class EarlyStopping:
@@ -29,7 +29,7 @@ class EarlyStopping:
         self.val_ht = []
         self.test_ht = []
 
-    def __call__(self, val_loss: dict, test_loss:dict, n_epoch: int):
+    def __call__(self, val_loss: dict, test_loss: dict, n_epoch: int):
         val_loss_mse = val_loss['MSE loss']
         self.val_ht.append(val_loss)
         self.test_ht.append(test_loss)
@@ -51,8 +51,7 @@ class EarlyStopping:
                 return True
 
 
-
-def save_images(batch_idx, var_idx, shift=None, interval=8,kwargs=None):
+def save_images(batch_idx, var_idx, shift=None, interval=8, kwargs=None):
     train_X = kwargs['train_X']
     target_train = kwargs['target_train']
     prediction_train = kwargs['prediction_train']
@@ -83,9 +82,9 @@ def save_images(batch_idx, var_idx, shift=None, interval=8,kwargs=None):
 
     ax[0].plot(past, label='Past')
     ax[0].plot(np.arange(len(past), len(past) + len(prediction)),
-             future, label='GroundTRUTH')
+               future, label='GroundTRUTH')
     ax[0].plot(np.arange(len(past), len(past) + len(prediction)),
-             prediction, label='Prediction')
+               prediction, label='Prediction')
     ax[0].legend()
     ax[0].set_title('Train')
     i = 0
@@ -107,9 +106,9 @@ def save_images(batch_idx, var_idx, shift=None, interval=8,kwargs=None):
 
     ax[1].plot(past, label='Past')
     ax[1].plot(np.arange(len(past), len(past) + len(prediction)),
-             future, label='GroundTRUTH')
+               future, label='GroundTRUTH')
     ax[1].plot(np.arange(len(past), len(past) + len(prediction)),
-             prediction, label='Prediction')
+               prediction, label='Prediction')
     ax[1].legend()
     ax[1].set_title('val')
 
@@ -159,6 +158,14 @@ class SampledForecastingNetTrainer:
         self.val_loader = val_loader
         self.test_loader = test_loader
 
+        self.preprocessor = ForecastingPreprocessor(window_size=window_size,
+                                                    n_prediction_steps=n_prediction_steps,
+                                                    lagged_values=lagged_values,
+                                                    sample_interval=sample_interval,
+                                                    target_scaler=target_scaler,
+                                                    device=device
+                                                    )
+
         self.target_scaler = target_scaler
 
         self.device = device
@@ -176,7 +183,7 @@ class SampledForecastingNetTrainer:
 
         self.lr_scheduler_w = lr_scheduler_w
 
-        if isinstance(self.lr_scheduler_w, (torch.optim.lr_scheduler.OneCycleLR, )):
+        if isinstance(self.lr_scheduler_w, (torch.optim.lr_scheduler.OneCycleLR,)):
             self.lr_scheduler_type = LR_SCHEDULER_TYPE.batch
         else:
             self.lr_scheduler_type = LR_SCHEDULER_TYPE.epoch
@@ -188,72 +195,12 @@ class SampledForecastingNetTrainer:
         self.forecast_only = model.forecast_only
         self.backcast_loss_ration = model.backcast_loss_ration
 
-    def preprocessing(self, X: dict):
-        past_targets = X['past_targets'].float()
-        past_features = X['past_features']
-        if past_features is not None:
-            past_features = past_features.float()
-        past_observed_targets = X['past_observed_targets']
-        future_features = X['future_features']
-        if future_features is not None:
-            future_features = future_features.float()
-
-        if self.window_size < past_targets.shape[1]:
-            past_targets = past_targets.to(self.device)
-            past_observed_targets = past_observed_targets.to(self.device)
-            past_targets[:, -self.window_size:], _, loc, scale = self.target_scaler.transform(
-                past_targets[:, -self.window_size:],
-                past_observed_targets[:, -self.window_size:]
-            )
-            past_targets[:, :-self.window_size] = torch.where(
-                past_observed_targets[:, :-self.window_size],
-                scale_value(past_targets[:, :-self.window_size], loc, scale, device=self.device),
-                past_targets[:, :-self.window_size])
-        else:
-            past_targets, _, loc, scale = self.target_scaler.transform(
-                past_targets.to(self.device),
-                past_observed_targets.to(self.device)
-            )
-        truncated_past_targets, self.cached_lag_mask_encoder = get_lagged_subsequences(past_targets,
-                                                                                       self.window_size,
-                                                                                       self.lagged_values,
-                                                                                       self.cached_lag_mask_encoder)
-
-        if past_features is not None:
-            if self.window_size <= past_features.shape[1]:
-                past_features = past_features[:, -self.window_size:]
-            elif self.lagged_values:
-                past_features = pad_tensor(past_features, self.window_size)
-
-        if past_features is not None:
-            past_features = past_features.to(device=self.device)
-            x_past = torch.cat([truncated_past_targets, past_features], dim=-1)
-        else:
-            x_past = truncated_past_targets
-
-        truncated_decoder_targets, self.cached_lag_mask_decoder = get_lagged_subsequences(past_targets,
-                                                                                          self.n_prediction_steps,
-                                                                                          self.lagged_values,
-                                                                                          self.cached_lag_mask_decoder)
-        """
-        if future_features is not None:
-            future_features = future_features.to(self.device)
-            x_future = torch.cat(
-                [future_features, truncated_decoder_targets], dim=-1
-            )
-        else:
-            x_future = truncated_decoder_targets
-        """
-        x_future = future_features.to(self.device)
-
-        return x_past, x_future, (loc, scale)
-
     def train_epoch(self, epoch: int):
 
         # train model
-        #"""
-        #n_pars = sum(p.numel() for p in self.model.parameters())
-        #print(n_pars / 1024 / 1024)
+        # """
+        # n_pars = sum(p.numel() for p in self.model.parameters())
+        # print(n_pars / 1024 / 1024)
 
         self.model.train()
         for (train_X, train_y) in tqdm(self.train_loader):
@@ -262,11 +209,11 @@ class SampledForecastingNetTrainer:
             torch.cuda.empty_cache()
             w_loss, _ = self.update_weights(train_X, train_y)
             torch.cuda.empty_cache()
-        #print(torch.cuda.max_memory_allocated(device=torch.device('cuda')) / 1024 / 1024)
-        #torch.cuda.empty_cache()
-        #torch.cuda.reset_peak_memory_stats(device=torch.device('cuda'))
-        #train_res = self.evaluate(self.train_loader, epoch, 'train')
-        #print(torch.cuda.max_memory_allocated(device=torch.device('cuda')) / 1024 / 1024)
+        # print(torch.cuda.max_memory_allocated(device=torch.device('cuda')) / 1024 / 1024)
+        # torch.cuda.empty_cache()
+        # torch.cuda.reset_peak_memory_stats(device=torch.device('cuda'))
+        # train_res = self.evaluate(self.train_loader, epoch, 'train')
+        # print(torch.cuda.max_memory_allocated(device=torch.device('cuda')) / 1024 / 1024)
 
         val_res = self.evaluate(self.val_loader, epoch, 'val')
         test_res = self.evaluate(self.test_loader, epoch, 'test')
@@ -275,9 +222,9 @@ class SampledForecastingNetTrainer:
             self.lr_scheduler_w.step()
 
         return val_res, test_res
-        #"""
+        # """
 
-        #self.evaluate_with_plot()
+        # self.evaluate_with_plot()
 
     def evaluate(self, test_loader, epoch, loader_type: str = 'test'):
         mse_losses = []
@@ -286,7 +233,7 @@ class SampledForecastingNetTrainer:
         self.model.eval()
 
         for (test_X, test_y) in tqdm(test_loader):
-            x_past_test, x_future_test, scale_value_test = self.preprocessing(test_X)
+            x_past_test, x_future_test, scale_value_test = self.preprocessor.preprocessing(test_X)
             target_test = test_y['future_targets'].float()
             n_data = len(target_test)
 
@@ -328,7 +275,7 @@ class SampledForecastingNetTrainer:
     def evaluate_with_plot(self):
         self.model.eval()
         for (test_X, test_y) in tqdm(self.test_loader):
-            x_past_test, x_future_test, scale_value_test = self.preprocessing(test_X)
+            x_past_test, x_future_test, scale_value_test = self.preprocessor.preprocessing(test_X)
             target_test = test_y['future_targets'].float()
             n_data = len(target_test)
 
@@ -346,7 +293,7 @@ class SampledForecastingNetTrainer:
             diff_test = (pred_test - target_test)
 
             train_X, train_y = next(iter(self.train_loader))
-            x_past_train, x_future_train, scale_value_train = self.preprocessing(train_X)
+            x_past_train, x_future_train, scale_value_train = self.preprocessor.preprocessing(train_X)
             target_train = train_y['future_targets'].float()
 
             pred_train = torch.zeros_like(target_train)
@@ -362,7 +309,7 @@ class SampledForecastingNetTrainer:
             diff_train = (target_train - pred_train)
 
             val_X, val_y = next(iter(self.val_loader))
-            x_past_val, x_future_val, scale_value_val = self.preprocessing(val_X)
+            x_past_val, x_future_val, scale_value_val = self.preprocessor.preprocessing(val_X)
             target_val = val_y['future_targets'].float()
             pred_val = torch.zeros_like(target_val)
 
@@ -393,15 +340,14 @@ class SampledForecastingNetTrainer:
             }
             func = partial(save_images, interval=self.sample_interval, kwargs=kwargs)
             for i in range(8):
-                func(2,0,i)
-            func(2,0,None)
-
+                func(2, 0, i)
+            func(2, 0, None)
 
             import pdb
             pdb.set_trace()
 
     def update_weights(self, train_X, train_y):
-        x_past_train, x_future_train, scale_value_train = self.preprocessing(train_X)
+        x_past_train, x_future_train, scale_value_train = self.preprocessor.preprocessing(train_X)
         target_train = train_y['future_targets'].float().to(self.device)
 
         all_shift = np.random.permutation(self.sample_interval)
@@ -432,7 +378,6 @@ class SampledForecastingNetTrainer:
                         target_train, forecast,
                     )
                     w_loss = loss_backcast * self.backcast_loss_ration + loss_forecast
-
 
             self.scaler.scale(w_loss).backward()
             wandb.log({'weights training loss': w_loss})
@@ -488,4 +433,3 @@ class SampledForecastingNetTrainer:
             lr_scheduler_w.load_state_dict(trainer_info['lr_scheduler_w'])
 
         return trainer_info.get('epoch', 0)
-

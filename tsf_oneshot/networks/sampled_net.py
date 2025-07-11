@@ -239,7 +239,6 @@ class SampledNet(nn.Module):
                                         net_encoder_output=net_encoder_output)
 
         forecast = self.head(cell_decoder_out)
-
         if self.forecast_only:
             return forecast
 
@@ -252,6 +251,13 @@ class SampledNet(nn.Module):
 
     def get_training_loss(self, target, prediction):
         return self.head.loss(target, prediction)
+
+    def get_loss_fn(self):
+        return self.head.loss
+
+    @property
+    def num_classes(self):
+        return 1
 
     @torch.no_grad()
     def grad_norm(self):
