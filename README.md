@@ -23,3 +23,9 @@ Therefore, you could directly evaluate the optimal architectures with the model 
 cd experiments
 python test_evaluated_model.py +benchmark=LTSF/etth1/etth1_96 +model=mixed_concat_darts seed=0
 ```
+
+Alternatively, you could also directly evaluate a randomly sampled configuration in the serach space:
+```
+cd experiments
+python eval_random_samples.py +benchmark=LTSF/electricity/electricity_96 +model=mixed_concat_darts seed=42
+```
